@@ -7,8 +7,11 @@ use std::f64::consts::PI;
 const SAMPLE_RATE: usize = 44_1000;
 const BIT_DEPTH: usize = 64;
 use glicol_synth::{
-    operator::Mul, oscillator::SinOsc, AudioContext as GlicolAudioContext, AudioContextBuilder,
-    Message,
+    filter::ResonantLowPassFilter,
+    operator::{Add, Mul},
+    oscillator::{SawOsc, SinOsc},
+    signal::{ConstSig, Noise},
+    AudioContext as GlicolAudioContext, AudioContextBuilder, Message,
 };
 type AudioContext = GlicolAudioContext<BIT_DEPTH>;
 fn main() {
@@ -86,18 +89,36 @@ fn model(app: &App) -> Model {
         .channels(2)
         .build();
 
-    let node_a = context.add_mono_node(SinOsc::new().freq(440.0));
-    let noise = glicol_synth::signal::Noise::new(0);
-    let filter = glicol_synth::filter::ResonantLowPassFilter::new().cutoff(5000.0);
-    let noise_node = context.add_mono_node(noise);
-    let filter_node = context.add_mono_node(filter);
-    let node_b = context.add_stereo_node(Mul::new(0.1));
-    context.chain(vec![node_a, noise_node]);
-    context.connect(noise_node, filter_node);
-    context.connect(filter_node, node_b);
+    // let tone = context.add_mono_node(SinOsc::new().freq(440.0));
+    // let filter = glicol_synth::filter::ResonantLowPassFilter::new().cutoff(5000.0);
+    // let volume = context.add_mono_node(Mul::new(0.3));
+    // let filter_node = context.add_mono_node(filter);
+    // let node_b = context.add_stereo_node(Mul::new(0.1));
+    // context.chain(vec![node_a, noise_node]);
+    // context.connect(noise_node, filter_node);
+    // context.connect(filter_node, node_b);
     // context.connect(noise_node, node_b);
     // context.connect(node_a, node_b);
-    context.connect(node_b, context.destination);
+    // context.connect(noise_node, context.destination);
+    // context.connect(tone, volume);
+    // context.connect(noise_node, volume);
+    // context.connect(volume, context.destination);
+    // let node_a = context.add_mono_node(SawOsc::new().freq(440.));
+    // let node_b = context.add_mono_node(ResonantLowPassFilter::new().cutoff(1000.0));
+    // let node_c = context.add_mono_node(ConstSig::new(10.0));
+    // context.chain(vec![node_a, node_b, context.destination]);
+    // context.connect(node_c, node_b);
+    let noise = Noise::new(0);
+    let noise_node = context.add_mono_node(noise);
+    let sin1 = context.add_stereo_node(SinOsc::new().freq(441.0));
+    let mul1 = context.add_stereo_node(Mul::new(0.1));
+    let mul2 = context.add_stereo_node(Mul::new(300.));
+    let add2 = context.add_stereo_node(Add::new(600.));
+    context.connect(sin1, mul1);
+    context.connect(noise_node, mul2);
+    context.connect(mul2, add2);
+    context.connect(add2, sin1);
+    context.connect(mul1, context.destination);
     let model = Audio { glicol: context };
 
     let stream = audio_host
