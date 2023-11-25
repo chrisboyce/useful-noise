@@ -88,10 +88,15 @@ fn model(app: &App) -> Model {
 
     let node_a = context.add_mono_node(SinOsc::new().freq(440.0));
     let noise = glicol_synth::signal::Noise::new(0);
+    let filter = glicol_synth::filter::ResonantLowPassFilter::new().cutoff(5000.0);
     let noise_node = context.add_mono_node(noise);
+    let filter_node = context.add_mono_node(filter);
     let node_b = context.add_stereo_node(Mul::new(0.1));
+    context.chain(vec![node_a, noise_node]);
+    context.connect(noise_node, filter_node);
+    context.connect(filter_node, node_b);
     // context.connect(noise_node, node_b);
-    context.connect(node_a, node_b);
+    // context.connect(node_a, node_b);
     context.connect(node_b, context.destination);
     let model = Audio { glicol: context };
 
