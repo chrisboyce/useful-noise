@@ -4,7 +4,15 @@ use nannou_audio::Buffer;
 use nannou_egui::{self, egui, Egui};
 use std::f64::consts::PI;
 
+const SAMPLE_RATE: usize = 44_1000;
+const BIT_DEPTH: usize = 64;
+use glicol_synth::{
+    operator::Mul, oscillator::SinOsc, AudioContext as GlicolAudioContext, AudioContextBuilder,
+    Message,
+};
+type AudioContext = GlicolAudioContext<BIT_DEPTH>;
 fn main() {
+    // let b = context.next_block();
     nannou::app(model).update(update).run();
 }
 
@@ -15,6 +23,7 @@ struct Model {
 }
 
 struct Settings {
+    frequency: f32,
     resolution: u32,
     scale: f32,
     rotation: f32,
@@ -22,8 +31,7 @@ struct Settings {
     position: Vec2,
 }
 struct Audio {
-    phase: f64,
-    hz: f64,
+    glicol: AudioContext,
 }
 fn update(_app: &App, model: &mut Model, update: Update) {
     let egui = &mut model.egui;
@@ -36,6 +44,9 @@ fn update(_app: &App, model: &mut Model, update: Update) {
         // Resolution slider
         ui.label("Resolution:");
         ui.add(egui::Slider::new(&mut settings.resolution, 1..=40));
+
+        ui.label("Frequency:");
+        ui.add(egui::Slider::new(&mut settings.frequency, 40.0..=40000.));
 
         // Scale slider
         ui.label("Scale:");
@@ -62,6 +73,7 @@ fn model(app: &App) -> Model {
         .raw_event(raw_window_event)
         .build()
         .unwrap();
+
     let window = app.window(window_id).unwrap();
     let egui = Egui::from_window(&window);
 
@@ -69,14 +81,23 @@ fn model(app: &App) -> Model {
     let audio_host = audio::Host::new();
 
     // Initialise the state that we want to live on the audio thread.
-    let model = Audio {
-        phase: 0.0,
-        hz: 440.0,
-    };
+    let mut context = AudioContextBuilder::<64>::new()
+        .sr(SAMPLE_RATE)
+        .channels(2)
+        .build();
+
+    let node_a = context.add_mono_node(SinOsc::new().freq(440.0));
+    let noise = glicol_synth::signal::Noise::new(0);
+    let noise_node = context.add_mono_node(noise);
+    let node_b = context.add_stereo_node(Mul::new(0.1));
+    // context.connect(noise_node, node_b);
+    context.connect(node_a, node_b);
+    context.connect(node_b, context.destination);
+    let model = Audio { glicol: context };
 
     let stream = audio_host
         .new_output_stream(model)
-        .render(audio)
+        .render(render_audio)
         .build()
         .unwrap();
 
@@ -91,24 +112,38 @@ fn model(app: &App) -> Model {
             rotation: 0.0,
             color: WHITE,
             position: vec2(0.0, 0.0),
+            frequency: 440.0,
         },
     }
 }
 
-// A function that renders the given `Audio` to the given `Buffer`.
-// In this case we play a simple sine wave at the audio's current frequency in `hz`.
-fn audio(audio: &mut Audio, buffer: &mut Buffer) {
-    let sample_rate = buffer.sample_rate() as f64;
-    let volume = 0.5;
-    for frame in buffer.frames_mut() {
-        let sine_amp = (2.0 * PI * audio.phase).sin() as f32;
-        audio.phase += audio.hz / sample_rate;
-        audio.phase %= sample_rate;
-        for channel in frame {
-            *channel = sine_amp * volume;
+fn render_audio(audio: &mut Audio, buffer: &mut Buffer) {
+    // println!("{}", buffer.frames_mut().len());
+    let block = audio.glicol.next_block();
+    // dbg!(&block);
+    for (frame_index, frame) in buffer.frames_mut().enumerate() {
+        for channel_index in 0..frame.len() {
+            frame[channel_index] = block[channel_index][frame_index];
+            // let mut channel = &frame[channel_index];
+            // *channel = block[channel_index][frame_index]
+            // *channel = block[]
         }
     }
 }
+// A function that renders the given `Audio` to the given `Buffer`.
+// In this case we play a simple sine wave at the audio's current frequency in `hz`.
+// fn audio(audio: &mut Audio, buffer: &mut Buffer) {
+//     let sample_rate = buffer.sample_rate() as f64;
+//     let volume = 0.5;
+//     for frame in buffer.frames_mut() {
+//         let sine_amp = (2.0 * PI * audio.phase).sin() as f32;
+//         audio.phase += audio.hz / sample_rate;
+//         audio.phase %= sample_rate;
+//         for channel in frame {
+//             *channel = sine_amp * volume;
+//         }
+//     }
+// }
 
 fn key_pressed(_app: &App, model: &mut Model, key: Key) {
     match key {
@@ -125,7 +160,7 @@ fn key_pressed(_app: &App, model: &mut Model, key: Key) {
             model
                 .stream
                 .send(|audio| {
-                    audio.hz += 10.0;
+                    // audio.hz += 10.0;
                 })
                 .unwrap();
         }
@@ -134,7 +169,7 @@ fn key_pressed(_app: &App, model: &mut Model, key: Key) {
             model
                 .stream
                 .send(|audio| {
-                    audio.hz -= 10.0;
+                    // audio.hz -= 10.0;
                 })
                 .unwrap();
         }
