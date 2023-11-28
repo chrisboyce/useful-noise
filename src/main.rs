@@ -4,10 +4,13 @@ use nannou_audio as audio;
 use nannou_audio::Buffer;
 use nannou_egui::{self, egui, Egui};
 use petgraph::graph::NodeIndex;
+use rustfft::{num_complex::Complex, FftPlanner};
 use std::f64::consts::PI;
+use std::sync::{Arc, RwLock};
+use std::{cell::OnceCell, sync::OnceLock};
 
 const SAMPLE_RATE: usize = 44_1000;
-const BIT_DEPTH: usize = 64;
+const FRAME_SIZE: usize = 64;
 use glicol_synth::{
     filter::ResonantLowPassFilter,
     operator::{Add, Mul},
@@ -15,7 +18,7 @@ use glicol_synth::{
     signal::{ConstSig, Noise},
     AudioContext as GlicolAudioContext, AudioContextBuilder, Message, Sum,
 };
-type AudioContext = GlicolAudioContext<BIT_DEPTH>;
+type AudioContext = GlicolAudioContext<FRAME_SIZE>;
 fn main() {
     // let b = context.next_block();
     nannou::app(model).update(update).run();
@@ -36,9 +39,11 @@ struct Settings {
     position: Vec2,
 }
 struct Audio {
+    fft: Vec<Complex<f32>>,
     tone: NodeIndex,
     context: AudioContext,
 }
+static FFT: OnceLock<Vec<Complex<f32>>> = OnceLock::new();
 fn update(_app: &App, model: &mut Model, update: Update) {
     let egui = &mut model.egui;
     let settings = &mut model.settings;
@@ -140,8 +145,10 @@ fn model(app: &App) -> Model {
     context.chain(vec![sin2, context.destination]);
     let model = Audio {
         context,
+        fft: Vec::with_capacity(64),
         tone: sin1,
     };
+    // let model = Arc::new(RwLock::new(model));
 
     let stream = audio_host
         .new_output_stream(model)
@@ -167,6 +174,15 @@ fn model(app: &App) -> Model {
 
 fn render_audio(audio: &mut Audio, buffer: &mut Buffer) {
     let block = audio.context.next_block();
+    audio.fft = block[0]
+        // let mut fft_input = block[0]
+        .into_iter()
+        .map(|value| Complex::new(*value, 0.))
+        .collect::<Vec<_>>();
+    let mut planner = FftPlanner::new();
+    let fft = planner.plan_fft_forward(64);
+
+    fft.process(&mut audio.fft);
     for (frame_index, frame) in buffer.frames_mut().enumerate() {
         for channel_index in 0..frame.len() {
             frame[channel_index] = block[channel_index][frame_index];
