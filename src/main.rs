@@ -1,7 +1,9 @@
+use egui_plot::{Line, Plot, PlotPoints};
 use nannou::prelude::*;
 use nannou_audio as audio;
 use nannou_audio::Buffer;
 use nannou_egui::{self, egui, Egui};
+use petgraph::graph::NodeIndex;
 use std::f64::consts::PI;
 
 const SAMPLE_RATE: usize = 44_1000;
@@ -11,7 +13,7 @@ use glicol_synth::{
     operator::{Add, Mul},
     oscillator::{SawOsc, SinOsc},
     signal::{ConstSig, Noise},
-    AudioContext as GlicolAudioContext, AudioContextBuilder, Message,
+    AudioContext as GlicolAudioContext, AudioContextBuilder, Message, Sum,
 };
 type AudioContext = GlicolAudioContext<BIT_DEPTH>;
 fn main() {
@@ -34,7 +36,8 @@ struct Settings {
     position: Vec2,
 }
 struct Audio {
-    glicol: AudioContext,
+    tone: NodeIndex,
+    context: AudioContext,
 }
 fn update(_app: &App, model: &mut Model, update: Update) {
     let egui = &mut model.egui;
@@ -90,9 +93,7 @@ fn model(app: &App) -> Model {
         .build();
 
     // let tone = context.add_mono_node(SinOsc::new().freq(440.0));
-    // let filter = glicol_synth::filter::ResonantLowPassFilter::new().cutoff(5000.0);
     // let volume = context.add_mono_node(Mul::new(0.3));
-    // let filter_node = context.add_mono_node(filter);
     // let node_b = context.add_stereo_node(Mul::new(0.1));
     // context.chain(vec![node_a, noise_node]);
     // context.connect(noise_node, filter_node);
@@ -108,18 +109,39 @@ fn model(app: &App) -> Model {
     // let node_c = context.add_mono_node(ConstSig::new(10.0));
     // context.chain(vec![node_a, node_b, context.destination]);
     // context.connect(node_c, node_b);
-    let noise = Noise::new(0);
-    let noise_node = context.add_mono_node(noise);
-    let sin1 = context.add_stereo_node(SinOsc::new().freq(441.0));
-    let mul1 = context.add_stereo_node(Mul::new(0.1));
-    let mul2 = context.add_stereo_node(Mul::new(300.));
-    let add2 = context.add_stereo_node(Add::new(600.));
-    context.connect(sin1, mul1);
-    context.connect(noise_node, mul2);
-    context.connect(mul2, add2);
-    context.connect(add2, sin1);
-    context.connect(mul1, context.destination);
-    let model = Audio { glicol: context };
+    // let filter = glicol_synth::filter::ResonantLowPassFilter::new().cutoff(5000.0);
+    // let filter_node = context.add_mono_node(filter);
+    // let noise = Noise::new(0);
+    // let noise_node = context.add_mono_node(noise);
+    // let t1 = context.add_stereo_node(SinOsc::new().freq(40.0));
+    // let m1 = context.add_stereo_node(Mul::new(.));
+    // let t2 = context.add_stereo_node(SinOsc::new().freq(80.0));
+    // let m2 = context.add_stereo_node(Mul::new(20.));
+    // let add = context.add_stereo_node(Add::new(600.0));
+    // context.connect(t1, m1);
+    // context.connect(t2, m2);
+    // context.connect(m1, add);
+    // context.connect(add, t2);
+    let sin1 = context.add_stereo_node(SinOsc::new().freq(440.0));
+    let sin2 = context.add_stereo_node(SinOsc::new().freq(80.0));
+    let mix = context.add_stereo_node(Sum {});
+    // let mul2 = context.add_stereo_node(Mul::new(0.1));
+    // let add = context.add_stereo_node(Add::new(500.));
+    // let mul1 = context.add_stereo_node(Mul::new(0.1));
+    // let mul2 = context.add_stereo_node(Mul::new(300.));
+    // let add2 = context.add_stereo_node(Add::new(600.));
+    // context.connect(sin1, mul1);
+    // context.connect(noise_node, mul2);
+    // context.connect(mul2, add2);
+    // context.connect(add2, sin1);
+    // context.connect(t1, t2);
+    // context.connect(mul1, context.destination);
+    context.chain(vec![sin1, context.destination]);
+    context.chain(vec![sin2, context.destination]);
+    let model = Audio {
+        context,
+        tone: sin1,
+    };
 
     let stream = audio_host
         .new_output_stream(model)
@@ -144,60 +166,22 @@ fn model(app: &App) -> Model {
 }
 
 fn render_audio(audio: &mut Audio, buffer: &mut Buffer) {
-    // println!("{}", buffer.frames_mut().len());
-    let block = audio.glicol.next_block();
-    // dbg!(&block);
+    let block = audio.context.next_block();
     for (frame_index, frame) in buffer.frames_mut().enumerate() {
         for channel_index in 0..frame.len() {
             frame[channel_index] = block[channel_index][frame_index];
-            // let mut channel = &frame[channel_index];
-            // *channel = block[channel_index][frame_index]
-            // *channel = block[]
         }
     }
 }
-// A function that renders the given `Audio` to the given `Buffer`.
-// In this case we play a simple sine wave at the audio's current frequency in `hz`.
-// fn audio(audio: &mut Audio, buffer: &mut Buffer) {
-//     let sample_rate = buffer.sample_rate() as f64;
-//     let volume = 0.5;
-//     for frame in buffer.frames_mut() {
-//         let sine_amp = (2.0 * PI * audio.phase).sin() as f32;
-//         audio.phase += audio.hz / sample_rate;
-//         audio.phase %= sample_rate;
-//         for channel in frame {
-//             *channel = sine_amp * volume;
-//         }
-//     }
-// }
 
 fn key_pressed(_app: &App, model: &mut Model, key: Key) {
     match key {
-        // Pause or unpause the audio when Space is pressed.
-        Key::Space => {
-            if model.stream.is_playing() {
-                model.stream.pause().unwrap();
-            } else {
-                model.stream.play().unwrap();
-            }
-        }
-        // Raise the frequency when the up key is pressed.
-        Key::Up => {
-            model
-                .stream
-                .send(|audio| {
-                    // audio.hz += 10.0;
-                })
-                .unwrap();
-        }
-        // Lower the frequency when the down key is pressed.
-        Key::Down => {
-            model
-                .stream
-                .send(|audio| {
-                    // audio.hz -= 10.0;
-                })
-                .unwrap();
+        Key::A => {
+            model.stream.send(|audio: &mut Audio| {
+                audio
+                    .context
+                    .send_msg(audio.tone, Message::SetToNumber(0, 300.))
+            });
         }
         _ => {}
     }
