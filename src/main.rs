@@ -27,7 +27,8 @@ fn main() {
 struct Model {
     egui: Egui,
     settings: Settings,
-    stream: audio::Stream<Audio>,
+    stream: audio::Stream<f32>,
+    // stream: audio::Stream<Audio>,
 }
 
 struct Settings {
@@ -97,50 +98,9 @@ fn model(app: &App) -> Model {
         .channels(2)
         .build();
 
-    // let tone = context.add_mono_node(SinOsc::new().freq(440.0));
-    // let volume = context.add_mono_node(Mul::new(0.3));
-    // let node_b = context.add_stereo_node(Mul::new(0.1));
-    // context.chain(vec![node_a, noise_node]);
-    // context.connect(noise_node, filter_node);
-    // context.connect(filter_node, node_b);
-    // context.connect(noise_node, node_b);
-    // context.connect(node_a, node_b);
-    // context.connect(noise_node, context.destination);
-    // context.connect(tone, volume);
-    // context.connect(noise_node, volume);
-    // context.connect(volume, context.destination);
-    // let node_a = context.add_mono_node(SawOsc::new().freq(440.));
-    // let node_b = context.add_mono_node(ResonantLowPassFilter::new().cutoff(1000.0));
-    // let node_c = context.add_mono_node(ConstSig::new(10.0));
-    // context.chain(vec![node_a, node_b, context.destination]);
-    // context.connect(node_c, node_b);
-    // let filter = glicol_synth::filter::ResonantLowPassFilter::new().cutoff(5000.0);
-    // let filter_node = context.add_mono_node(filter);
-    // let noise = Noise::new(0);
-    // let noise_node = context.add_mono_node(noise);
-    // let t1 = context.add_stereo_node(SinOsc::new().freq(40.0));
-    // let m1 = context.add_stereo_node(Mul::new(.));
-    // let t2 = context.add_stereo_node(SinOsc::new().freq(80.0));
-    // let m2 = context.add_stereo_node(Mul::new(20.));
-    // let add = context.add_stereo_node(Add::new(600.0));
-    // context.connect(t1, m1);
-    // context.connect(t2, m2);
-    // context.connect(m1, add);
-    // context.connect(add, t2);
     let sin1 = context.add_stereo_node(SinOsc::new().freq(440.0));
     let sin2 = context.add_stereo_node(SinOsc::new().freq(80.0));
     let mix = context.add_stereo_node(Sum {});
-    // let mul2 = context.add_stereo_node(Mul::new(0.1));
-    // let add = context.add_stereo_node(Add::new(500.));
-    // let mul1 = context.add_stereo_node(Mul::new(0.1));
-    // let mul2 = context.add_stereo_node(Mul::new(300.));
-    // let add2 = context.add_stereo_node(Add::new(600.));
-    // context.connect(sin1, mul1);
-    // context.connect(noise_node, mul2);
-    // context.connect(mul2, add2);
-    // context.connect(add2, sin1);
-    // context.connect(t1, t2);
-    // context.connect(mul1, context.destination);
     context.chain(vec![sin1, context.destination]);
     context.chain(vec![sin2, context.destination]);
     let model = Audio {
@@ -148,11 +108,13 @@ fn model(app: &App) -> Model {
         fft: Vec::with_capacity(64),
         tone: sin1,
     };
-    // let model = Arc::new(RwLock::new(model));
 
+    let mut brown = 0.;
     let stream = audio_host
-        .new_output_stream(model)
-        .render(render_audio)
+        .new_output_stream(brown)
+        .render(render_brownian_noise)
+        // .new_output_stream(model)
+        // .render(render_audio)
         .build()
         .unwrap();
 
@@ -172,6 +134,34 @@ fn model(app: &App) -> Model {
     }
 }
 
+fn render_brownian_noise(previous_value: &mut f32, buffer: &mut Buffer) {
+    let mut value = *previous_value;
+    for (frame_index, frame) in buffer.frames_mut().enumerate() {
+        // dbg!(frame);
+        // for channel_index in 0..frame.len() {
+        let random_walk_value = 0.1 * fastrand::f32();
+        // To keep our signal within sane values, we enforce that the next
+        // value is within the  -1..1 range
+        value = {
+            let new_value_before_bounds = value + random_walk_value;
+            if new_value_before_bounds > 1.0 {
+                let bounce = new_value_before_bounds - 1.0;
+                let value_after_bounce = 1.0 - bounce;
+                value_after_bounce
+            } else if new_value_before_bounds < -1.0 {
+                let bounce = new_value_before_bounds + 1.0;
+                let value_after_bounce = 1.0 + bounce;
+                value_after_bounce
+            } else {
+                new_value_before_bounds
+            }
+        };
+
+        frame[0] = value;
+        frame[1] = value;
+    }
+    *previous_value = value;
+}
 fn render_audio(audio: &mut Audio, buffer: &mut Buffer) {
     let block = audio.context.next_block();
     audio.fft = block[0]
@@ -186,6 +176,14 @@ fn render_audio(audio: &mut Audio, buffer: &mut Buffer) {
     for (frame_index, frame) in buffer.frames_mut().enumerate() {
         for channel_index in 0..frame.len() {
             frame[channel_index] = block[channel_index][frame_index];
+            let i_value = (frame[channel_index] * (i16::MAX as f32)) as i16 as u16;
+
+            let mut buffer: [u8; 4] = [0, 0, 0, 0];
+            buffer[0] = (i_value & 0x00ff) as u8;
+            buffer[0 + 1] = ((i_value & 0xff00) >> 8) as u8;
+            buffer[0 + 2] = (i_value & 0x00ff) as u8;
+            buffer[0 + 3] = ((i_value & 0xff00) >> 8) as u8;
+            // i2s.write(buffer, 1000);
         }
     }
 }
@@ -193,11 +191,11 @@ fn render_audio(audio: &mut Audio, buffer: &mut Buffer) {
 fn key_pressed(_app: &App, model: &mut Model, key: Key) {
     match key {
         Key::A => {
-            model.stream.send(|audio: &mut Audio| {
-                audio
-                    .context
-                    .send_msg(audio.tone, Message::SetToNumber(0, 300.))
-            });
+            // model.stream.send(|audio: &mut Audio| {
+            //     audio
+            //         .context
+            //         .send_msg(audio.tone, Message::SetToNumber(0, 300.))
+            // });
         }
         _ => {}
     }
