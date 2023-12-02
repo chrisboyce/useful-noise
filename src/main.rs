@@ -1,4 +1,5 @@
 use egui_plot::{Line, Plot, PlotPoints};
+use glicol_synth::filter::ResonantHighPassFilter;
 use glicol_synth::Node;
 use nannou::prelude::*;
 use nannou_audio as audio;
@@ -33,12 +34,10 @@ struct Model {
 }
 
 struct Settings {
-    frequency: f32,
-    resolution: u32,
-    scale: f32,
-    rotation: f32,
-    color: Srgb<u8>,
-    position: Vec2,
+    brownish_noise_knob_a: f32,
+    brownish_noise_volume: f32,
+    low_pass_freq: f32,
+    high_pass_freq: f32,
 }
 
 struct BrownishNoise {
@@ -55,15 +54,6 @@ impl BrownishNoise {
     }
 }
 
-// for i in 0..N {
-//     for j in 0..output.len() {
-//         output[j][i] = (self.phase * 2.0 * std::f32::consts::PI).sin();
-//     }
-//     self.phase += self.freq / self.sr as f32;
-//     if self.phase > 1.0 {
-//         self.phase -= 1.0
-//     }
-// }
 impl<const N: usize> Node<N> for BrownishNoise {
     fn process(
         &mut self,
@@ -71,33 +61,37 @@ impl<const N: usize> Node<N> for BrownishNoise {
         output: &mut [glicol_synth::Buffer<N>],
     ) {
         let mut value = self.previous_brown_value;
-        // let r = fastrand::f32();
-        // println!("Random Walk: {r}");
         for i in 0..N {
             // value += random_walk_value;
             // To keep our signal within sane values, we enforce that the next
             // value is within the  -1..1 range
             let random_walk_value = self.brown_walk_scale * (fastrand::f32() * 2. - 1.0);
-            value = {
+            let new_value = {
                 let new_value_before_bounds = value + random_walk_value;
                 // println!("A {new_value_before_bounds}");
                 if new_value_before_bounds > 1.0 {
-                    let bounce = new_value_before_bounds - 1.0;
-                    let value_after_bounce = 1.0 - bounce;
-                    value_after_bounce
+                    // let bounce = new_value_before_bounds - 1.0;
+                    // let value_after_bounce = 1.0 - bounce;
+                    // value_after_bounce
+                    1.0
                 } else if new_value_before_bounds < -1.0 {
-                    let bounce = new_value_before_bounds + 1.0;
-                    let value_after_bounce = 1.0 + bounce;
-                    value_after_bounce
+                    // let bounce = new_value_before_bounds + 1.0;
+                    // let value_after_bounce = 1.0 + bounce;
+                    // value_after_bounce
+                    -1.0
                 } else {
                     new_value_before_bounds
                 }
             };
-
+            if new_value - value < -1. {
+                println!("Value difference {}", new_value - value);
+            }
+            value = new_value;
             for j in 0..output.len() {
                 output[j][i] = value;
             }
         }
+
         self.previous_brown_value = value;
     }
 
@@ -111,42 +105,81 @@ impl<const N: usize> Node<N> for BrownishNoise {
     }
 }
 
-struct NoiseContext {
-    brown_walk_scale: f32,
-    previous_brown_value: f32,
-}
-
 struct Audio {
     fft: Vec<Complex<f32>>,
-    tone: NodeIndex,
+    brownish_node_index: NodeIndex,
+    brownish_node_volume_index: NodeIndex,
+    brownish_high_pass_index: NodeIndex,
+    brownish_low_pass_index: NodeIndex,
     context: AudioContext,
 }
 
-static FFT: OnceLock<Vec<Complex<f32>>> = OnceLock::new();
 fn update(_app: &App, model: &mut Model, update: Update) {
     let egui = &mut model.egui;
     let settings = &mut model.settings;
 
     egui.set_elapsed_time(update.since_start);
     let ctx = egui.begin_frame();
-    let f = settings.frequency;
+    let f = settings.brownish_noise_knob_a;
+    let volume = settings.brownish_noise_volume;
 
     model.stream.send(move |audio: &mut Audio| {
         audio.context.send_msg(
-            audio.tone,
+            audio.brownish_node_index,
             Message::SetParam(0, glicol_synth::GlicolPara::Number(f)),
         )
     });
 
-    egui::Window::new("Settings").show(&ctx, |ui| {
-        ui.label("Walk Scaler:");
-        ui.add(egui::Slider::new(&mut settings.frequency, -1.0..=1.0));
+    model.stream.send(move |audio: &mut Audio| {
+        audio.context.send_msg(
+            audio.brownish_node_volume_index,
+            Message::SetToNumber(0, volume),
+        )
+    });
+
+    // let f = settings.high_pass_freq;
+    // model.stream.send(move |audio: &mut Audio| {
+    //     audio
+    //         .context
+    //         .send_msg(audio.brownish_high_pass_index, Message::SetToNumber(0, f))
+    // });
+    let f = settings.low_pass_freq;
+    model.stream.send(move |audio: &mut Audio| {
+        audio
+            .context
+            .send_msg(audio.brownish_low_pass_index, Message::SetToNumber(0, f))
+    });
+
+    egui::Window::new("Brownish Noise").show(&ctx, |ui| {
+        ui.label("Volume");
+        ui.add(egui::Slider::new(
+            &mut settings.brownish_noise_volume,
+            0.0..=1.0,
+        ));
+        ui.label("Low Pass");
+        ui.add(egui::Slider::new(
+            &mut settings.low_pass_freq,
+            0.0..=10000.0,
+        ));
+        // ui.label("High Pass");
+        // ui.add(egui::Slider::new(
+        //     &mut settings.high_pass_freq,
+        //     0.0..=20000.0,
+        // ));
+
+        ui.label("Knob A");
+        ui.add(egui::Slider::new(
+            &mut settings.brownish_noise_knob_a,
+            0.0..=1.0,
+        ));
     });
 }
+
 fn model(app: &App) -> Model {
     // Create a window to receive key pressed events.
     let window_id = app
         .new_window()
+        .size(200, 200)
         .key_pressed(key_pressed)
         .view(view)
         .raw_event(raw_window_event)
@@ -169,7 +202,15 @@ fn model(app: &App) -> Model {
     // let sin2 = context.add_stereo_node(SinOsc::new().freq(80.0));
     let noise = BrownishNoise::new();
     let noise_id = context.add_stereo_node(noise);
-    context.chain(vec![noise_id, context.destination]);
+    let noise_high_pass = context.add_stereo_node(ResonantHighPassFilter::new().cutoff(1000.0));
+    let noise_low_pass = context.add_stereo_node(ResonantLowPassFilter::new().cutoff(1000.0));
+    let noise_volume = context.add_stereo_node(Mul::new(1.));
+    context.chain(vec![
+        noise_id,
+        noise_low_pass,
+        noise_volume,
+        context.destination,
+    ]);
 
     // let mix = context.add_stereo_node(Sum {});
     // context.chain(vec![sin1, context.destination]);
@@ -177,7 +218,10 @@ fn model(app: &App) -> Model {
     let model = Audio {
         context,
         fft: Vec::with_capacity(64),
-        tone: noise_id,
+        brownish_node_index: noise_id,
+        brownish_node_volume_index: noise_volume,
+        brownish_high_pass_index: noise_high_pass,
+        brownish_low_pass_index: noise_low_pass,
     };
 
     let mut brown = 0.;
@@ -195,64 +239,19 @@ fn model(app: &App) -> Model {
         egui,
         stream,
         settings: Settings {
-            resolution: 10,
-            scale: 200.0,
-            rotation: 0.0,
-            color: WHITE,
-            position: vec2(0.0, 0.0),
-            frequency: 440.0,
+            brownish_noise_knob_a: 0.07,
+            brownish_noise_volume: 0.65,
+            low_pass_freq: 10000.0,
+            high_pass_freq: 0.0,
         },
     }
 }
-
-// fn render_brownian_noise(context: &mut NoiseContext, buffer: &mut Buffer) {
-//     let mut value = *context.previous_brown_value;
-//     for (frame_index, frame) in buffer.frames_mut().enumerate() {
-//         let random_walk_value = context.brown_walk_scale * fastrand::f32();
-//         // To keep our signal within sane values, we enforce that the next
-//         // value is within the  -1..1 range
-//         value = {
-//             let new_value_before_bounds = value + random_walk_value;
-//             if new_value_before_bounds > 1.0 {
-//                 let bounce = new_value_before_bounds - 1.0;
-//                 let value_after_bounce = 1.0 - bounce;
-//                 value_after_bounce
-//             } else if new_value_before_bounds < -1.0 {
-//                 let bounce = new_value_before_bounds + 1.0;
-//                 let value_after_bounce = 1.0 + bounce;
-//                 value_after_bounce
-//             } else {
-//                 new_value_before_bounds
-//             }
-//         };
-
-//         frame[0] = value;
-//         frame[1] = value;
-//     }
-//     *context.previous_brown_value = value;
-// }
+/// Copies the audio data from the glicol buffer into the nannou audio buffer
 fn render_audio(audio: &mut Audio, buffer: &mut Buffer) {
     let block = audio.context.next_block();
-    audio.fft = block[0]
-        // let mut fft_input = block[0]
-        .into_iter()
-        .map(|value| Complex::new(*value, 0.))
-        .collect::<Vec<_>>();
-    let mut planner = FftPlanner::new();
-    let fft = planner.plan_fft_forward(64);
-
-    fft.process(&mut audio.fft);
     for (frame_index, frame) in buffer.frames_mut().enumerate() {
         for channel_index in 0..frame.len() {
             frame[channel_index] = block[channel_index][frame_index];
-            let i_value = (frame[channel_index] * (i16::MAX as f32)) as i16 as u16;
-
-            let mut buffer: [u8; 4] = [0, 0, 0, 0];
-            buffer[0] = (i_value & 0x00ff) as u8;
-            buffer[0 + 1] = ((i_value & 0xff00) >> 8) as u8;
-            buffer[0 + 2] = (i_value & 0x00ff) as u8;
-            buffer[0 + 3] = ((i_value & 0xff00) >> 8) as u8;
-            // i2s.write(buffer, 1000);
         }
     }
 }
@@ -279,14 +278,6 @@ fn view(app: &App, model: &Model, frame: Frame) {
 
     let draw = app.draw();
     draw.background().color(BLACK);
-
-    // let rotation_radians = deg_to_rad(settings.rotation);
-    // draw.ellipse()
-    //     .resolution(settings.resolution as f32)
-    //     .xy(settings.position)
-    //     .color(settings.color)
-    //     .rotate(-rotation_radians)
-    //     .radius(settings.scale);
 
     draw.to_frame(app, &frame).unwrap();
     model.egui.draw_to_frame(&frame).unwrap();
