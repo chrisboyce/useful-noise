@@ -1,4 +1,5 @@
 use egui_plot::{Line, Plot, PlotPoints};
+use glicol_synth::Node;
 use nannou::prelude::*;
 use nannou_audio as audio;
 use nannou_audio::Buffer;
@@ -27,7 +28,7 @@ fn main() {
 struct Model {
     egui: Egui,
     settings: Settings,
-    stream: audio::Stream<f32>,
+    stream: audio::Stream<Audio>,
     // stream: audio::Stream<Audio>,
 }
 
@@ -39,11 +40,88 @@ struct Settings {
     color: Srgb<u8>,
     position: Vec2,
 }
+
+struct BrownishNoise {
+    brown_walk_scale: f32,
+    previous_brown_value: f32,
+}
+
+impl BrownishNoise {
+    fn new() -> Self {
+        Self {
+            brown_walk_scale: 0.01,
+            previous_brown_value: 0.,
+        }
+    }
+}
+
+// for i in 0..N {
+//     for j in 0..output.len() {
+//         output[j][i] = (self.phase * 2.0 * std::f32::consts::PI).sin();
+//     }
+//     self.phase += self.freq / self.sr as f32;
+//     if self.phase > 1.0 {
+//         self.phase -= 1.0
+//     }
+// }
+impl<const N: usize> Node<N> for BrownishNoise {
+    fn process(
+        &mut self,
+        _inputs: &mut hashbrown::HashMap<usize, glicol_synth::Input<N>>,
+        output: &mut [glicol_synth::Buffer<N>],
+    ) {
+        let mut value = self.previous_brown_value;
+        // let r = fastrand::f32();
+        // println!("Random Walk: {r}");
+        for i in 0..N {
+            // value += random_walk_value;
+            // To keep our signal within sane values, we enforce that the next
+            // value is within the  -1..1 range
+            let random_walk_value = self.brown_walk_scale * (fastrand::f32() * 2. - 1.0);
+            value = {
+                let new_value_before_bounds = value + random_walk_value;
+                // println!("A {new_value_before_bounds}");
+                if new_value_before_bounds > 1.0 {
+                    let bounce = new_value_before_bounds - 1.0;
+                    let value_after_bounce = 1.0 - bounce;
+                    value_after_bounce
+                } else if new_value_before_bounds < -1.0 {
+                    let bounce = new_value_before_bounds + 1.0;
+                    let value_after_bounce = 1.0 + bounce;
+                    value_after_bounce
+                } else {
+                    new_value_before_bounds
+                }
+            };
+
+            for j in 0..output.len() {
+                output[j][i] = value;
+            }
+        }
+        self.previous_brown_value = value;
+    }
+
+    fn send_msg(&mut self, info: glicol_synth::Message) {
+        match info {
+            Message::SetParam(0, glicol_synth::GlicolPara::Number(scale)) => {
+                self.brown_walk_scale = scale
+            }
+            _ => todo!(),
+        }
+    }
+}
+
+struct NoiseContext {
+    brown_walk_scale: f32,
+    previous_brown_value: f32,
+}
+
 struct Audio {
     fft: Vec<Complex<f32>>,
     tone: NodeIndex,
     context: AudioContext,
 }
+
 static FFT: OnceLock<Vec<Complex<f32>>> = OnceLock::new();
 fn update(_app: &App, model: &mut Model, update: Update) {
     let egui = &mut model.egui;
@@ -51,29 +129,18 @@ fn update(_app: &App, model: &mut Model, update: Update) {
 
     egui.set_elapsed_time(update.since_start);
     let ctx = egui.begin_frame();
+    let f = settings.frequency;
+
+    model.stream.send(move |audio: &mut Audio| {
+        audio.context.send_msg(
+            audio.tone,
+            Message::SetParam(0, glicol_synth::GlicolPara::Number(f)),
+        )
+    });
 
     egui::Window::new("Settings").show(&ctx, |ui| {
-        // Resolution slider
-        ui.label("Resolution:");
-        ui.add(egui::Slider::new(&mut settings.resolution, 1..=40));
-
-        ui.label("Frequency:");
-        ui.add(egui::Slider::new(&mut settings.frequency, 40.0..=40000.));
-
-        // Scale slider
-        ui.label("Scale:");
-        ui.add(egui::Slider::new(&mut settings.scale, 0.0..=1000.0));
-
-        // Rotation slider
-        ui.label("Rotation:");
-        ui.add(egui::Slider::new(&mut settings.rotation, 0.0..=360.0));
-
-        // Random color button
-        let clicked = ui.button("Random color").clicked();
-
-        if clicked {
-            settings.color = rgb(random(), random(), random());
-        }
+        ui.label("Walk Scaler:");
+        ui.add(egui::Slider::new(&mut settings.frequency, -1.0..=1.0));
     });
 }
 fn model(app: &App) -> Model {
@@ -99,22 +166,26 @@ fn model(app: &App) -> Model {
         .build();
 
     let sin1 = context.add_stereo_node(SinOsc::new().freq(440.0));
-    let sin2 = context.add_stereo_node(SinOsc::new().freq(80.0));
-    let mix = context.add_stereo_node(Sum {});
-    context.chain(vec![sin1, context.destination]);
-    context.chain(vec![sin2, context.destination]);
+    // let sin2 = context.add_stereo_node(SinOsc::new().freq(80.0));
+    let noise = BrownishNoise::new();
+    let noise_id = context.add_stereo_node(noise);
+    context.chain(vec![noise_id, context.destination]);
+
+    // let mix = context.add_stereo_node(Sum {});
+    // context.chain(vec![sin1, context.destination]);
+    // context.chain(vec![sin2, context.destination]);
     let model = Audio {
         context,
         fft: Vec::with_capacity(64),
-        tone: sin1,
+        tone: noise_id,
     };
 
     let mut brown = 0.;
     let stream = audio_host
-        .new_output_stream(brown)
-        .render(render_brownian_noise)
-        // .new_output_stream(model)
-        // .render(render_audio)
+        // .new_output_stream(brown)
+        // .render(render_brownian_noise)
+        .new_output_stream(model)
+        .render(render_audio)
         .build()
         .unwrap();
 
@@ -134,34 +205,32 @@ fn model(app: &App) -> Model {
     }
 }
 
-fn render_brownian_noise(previous_value: &mut f32, buffer: &mut Buffer) {
-    let mut value = *previous_value;
-    for (frame_index, frame) in buffer.frames_mut().enumerate() {
-        // dbg!(frame);
-        // for channel_index in 0..frame.len() {
-        let random_walk_value = 0.1 * fastrand::f32();
-        // To keep our signal within sane values, we enforce that the next
-        // value is within the  -1..1 range
-        value = {
-            let new_value_before_bounds = value + random_walk_value;
-            if new_value_before_bounds > 1.0 {
-                let bounce = new_value_before_bounds - 1.0;
-                let value_after_bounce = 1.0 - bounce;
-                value_after_bounce
-            } else if new_value_before_bounds < -1.0 {
-                let bounce = new_value_before_bounds + 1.0;
-                let value_after_bounce = 1.0 + bounce;
-                value_after_bounce
-            } else {
-                new_value_before_bounds
-            }
-        };
+// fn render_brownian_noise(context: &mut NoiseContext, buffer: &mut Buffer) {
+//     let mut value = *context.previous_brown_value;
+//     for (frame_index, frame) in buffer.frames_mut().enumerate() {
+//         let random_walk_value = context.brown_walk_scale * fastrand::f32();
+//         // To keep our signal within sane values, we enforce that the next
+//         // value is within the  -1..1 range
+//         value = {
+//             let new_value_before_bounds = value + random_walk_value;
+//             if new_value_before_bounds > 1.0 {
+//                 let bounce = new_value_before_bounds - 1.0;
+//                 let value_after_bounce = 1.0 - bounce;
+//                 value_after_bounce
+//             } else if new_value_before_bounds < -1.0 {
+//                 let bounce = new_value_before_bounds + 1.0;
+//                 let value_after_bounce = 1.0 + bounce;
+//                 value_after_bounce
+//             } else {
+//                 new_value_before_bounds
+//             }
+//         };
 
-        frame[0] = value;
-        frame[1] = value;
-    }
-    *previous_value = value;
-}
+//         frame[0] = value;
+//         frame[1] = value;
+//     }
+//     *context.previous_brown_value = value;
+// }
 fn render_audio(audio: &mut Audio, buffer: &mut Buffer) {
     let block = audio.context.next_block();
     audio.fft = block[0]
@@ -211,13 +280,13 @@ fn view(app: &App, model: &Model, frame: Frame) {
     let draw = app.draw();
     draw.background().color(BLACK);
 
-    let rotation_radians = deg_to_rad(settings.rotation);
-    draw.ellipse()
-        .resolution(settings.resolution as f32)
-        .xy(settings.position)
-        .color(settings.color)
-        .rotate(-rotation_radians)
-        .radius(settings.scale);
+    // let rotation_radians = deg_to_rad(settings.rotation);
+    // draw.ellipse()
+    //     .resolution(settings.resolution as f32)
+    //     .xy(settings.position)
+    //     .color(settings.color)
+    //     .rotate(-rotation_radians)
+    //     .radius(settings.scale);
 
     draw.to_frame(app, &frame).unwrap();
     model.egui.draw_to_frame(&frame).unwrap();
