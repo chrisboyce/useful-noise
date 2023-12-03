@@ -1,9 +1,13 @@
+use std::path::Path;
+
 use glicol_synth::{oscillator::SinOsc, Node};
 use nannou::prelude::*;
 use nannou_audio as audio;
 use nannou_audio::Buffer;
 use nannou_egui::{self, egui, Egui};
 use petgraph::graph::NodeIndex;
+use serde::Deserialize;
+use serde::Serialize;
 
 const SAMPLE_RATE: usize = 44_1000;
 const FRAME_SIZE: usize = 64;
@@ -13,21 +17,27 @@ use glicol_synth::{
 };
 type AudioContext = GlicolAudioContext<FRAME_SIZE>;
 fn main() {
-    nannou::app(model).update(update).run();
+    nannou::app(model).exit(handle_exit).update(update).run();
 }
 
+enum Source {
+    Brownish,
+    White,
+}
 struct Model {
     egui: Egui,
     settings: Settings,
     stream: audio::Stream<Audio>,
 }
 
+#[derive(Serialize, Deserialize)]
 struct Settings {
     brownish_noise_knob_a: f32,
     brownish_noise_volume: f32,
     low_pass_freq: f32,
 }
 
+#[derive(Serialize, Deserialize)]
 struct BrownishNoise {
     brown_walk_scale: f32,
     previous_brown_value: f32,
@@ -239,4 +249,8 @@ fn view(app: &App, model: &Model, frame: Frame) {
 
     draw.to_frame(app, &frame).unwrap();
     model.egui.draw_to_frame(&frame).unwrap();
+}
+fn handle_exit(app: &App, model: Model) {
+    let settings = toml::to_string(&model.settings).unwrap();
+    dbg!(settings);
 }
