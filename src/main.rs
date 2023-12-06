@@ -21,25 +21,42 @@ fn main() {
     nannou::app(model).exit(handle_exit).update(update).run();
 }
 
-#[derive(Serialize, Deserialize)]
-enum Source {
+#[derive(Debug)]
+enum NodeIndexSet {
+    Brownish {
+        volume: NodeIndex,
+        low_pass: NodeIndex,
+        knob_a: NodeIndex,
+    },
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+enum SourceParam {
     Brownish {
         knob_a: f32,
         volume: f32,
         low_pass_freq: f32,
     },
-    White,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct SourceConfig {
+    #[serde(skip)]
+    node_index_set: Option<NodeIndexSet>,
+    params: SourceParam,
 }
 
 impl Default for NewSettings {
     fn default() -> Self {
         Self {
-            sources: vec![Source::Brownish {
-                knob_a: 0.1,
-                volume: 0.5,
-                low_pass_freq: 500.0,
+            source_configs: vec![SourceConfig {
+                params: SourceParam::Brownish {
+                    knob_a: 0.1,
+                    volume: 0.5,
+                    low_pass_freq: 500.0,
+                },
+                node_index_set: None,
             }],
-            source_indices: vec![],
         }
     }
 }
@@ -53,9 +70,9 @@ struct Model {
 
 #[derive(Serialize, Deserialize)]
 struct NewSettings {
-    sources: Vec<Source>,
-    #[serde(skip)]
-    source_indices: Vec<NodeIndexSet>,
+    source_configs: Vec<SourceConfig>, // sources: Vec<SourceParam>,
+                                       // #[serde(skip)]
+                                       // source_indices: Vec<NodeIndexSet>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -137,35 +154,42 @@ fn update(_app: &App, model: &mut Model, update: Update) {
     let ctx = egui.begin_frame();
 
     // Draw a UI element for each of the sources
-    for (i, node_index_set) in model.new_settings.source_indices.iter().enumerate() {
-        let f = &model.new_settings.sources[i];
-        let title = &match node_index_set {
-            NodeIndexSet::Brownish { .. } => "Brownish Noise".to_string(),
+    for node in &model.new_settings.source_configs {
+        // for (i, node_index_set) in model.new_settings.source_indices.iter().enumerate() {
+        // let f = &model.new_settings.sources[i];
+        let title = &match node.node_index_set {
+            Some(NodeIndexSet::Brownish { .. }) => "Brownish Noise".to_string(),
+            None => "Unknown node type".to_string(),
         };
         egui::Window::new(title).show(&ctx, |ui| {
-            match node_index_set {
-                NodeIndexSet::Brownish {
-                    volume,
-                    low_pass,
+            match node.params {
+                SourceParam::Brownish {
                     knob_a,
+                    volume,
+                    low_pass_freq,
                 } => {
                     ui.label("Volume");
-                    // ui.add(egui::Slider::new(
-                    //     &mut settings.brownish_noise_volume,
-                    //     0.0..=1.0,
-                    // ));
-                    // ui.label("Low Pass");
-                    // ui.add(egui::Slider::new(
-                    //     &mut settings.low_pass_freq,
-                    //     0.0..=10000.0,
-                    // ));
+                    //     // ui.add(egui::Slider::new(
+                    //     //     &mut settings.brownish_noise_volume,
+                    //     //     0.0..=1.0,
+                    //     // ));
+                    //     // ui.label("Low Pass");
+                    //     // ui.add(egui::Slider::new(
+                    //     //     &mut settings.low_pass_freq,
+                    //     //     0.0..=10000.0,
+                    //     // ));
 
-                    // ui.label("Knob A");
-                    // ui.add(egui::Slider::new(
-                    //     &mut settings.brownish_noise_knob_a,
-                    //     0.0..=1.0,
-                    // ));
-                }
+                    //     // ui.label("Knob A");
+                    //     // ui.add(egui::Slider::new(
+                    //     //     &mut settings.brownish_noise_knob_a,
+                    //     //     0.0..=1.0,
+                    //     // ));
+                } // NodeIndexSet::Brownish {
+                  //     volume,
+                  //     low_pass,
+                  //     knob_a,
+                  // } => {
+                  // }
             }
         });
     }
@@ -221,15 +245,6 @@ fn update(_app: &App, model: &mut Model, update: Update) {
         })
         .unwrap();
 }
-
-#[derive(Debug)]
-enum NodeIndexSet {
-    Brownish {
-        volume: NodeIndex,
-        low_pass: NodeIndex,
-        knob_a: NodeIndex,
-    },
-}
 fn model(app: &App) -> Model {
     // Create a window to receive key pressed events.
     let window_id = app
@@ -255,50 +270,52 @@ fn model(app: &App) -> Model {
         .build();
 
     let mut settings = NewSettings::default();
-    let mut node_indices = vec![];
 
-    for source in &settings.sources {
-        match source {
-            Source::Brownish {
-                knob_a,
-                volume,
-                low_pass_freq,
-            } => {
-                let noise = BrownishNoise::new_with_scale(*knob_a);
-                let noise_id = context.add_stereo_node(noise);
-                let noise_low_pass =
-                    context.add_stereo_node(ResonantLowPassFilter::new().cutoff(*low_pass_freq));
-                let noise_volume = context.add_stereo_node(Mul::new(*volume));
-                node_indices.push(NodeIndexSet::Brownish {
-                    volume: noise_volume,
-                    low_pass: noise_low_pass,
-                    knob_a: noise_id,
-                });
-
-                context.chain(vec![
-                    noise_id,
-                    noise_low_pass,
-                    noise_volume,
-                    context.destination,
-                ]);
+    settings.source_configs = settings
+        .source_configs
+        .into_iter()
+        .map(|source_config| {
+            let node_index_set = match source_config.params {
+                SourceParam::Brownish {
+                    knob_a,
+                    volume,
+                    low_pass_freq,
+                } => {
+                    let noise = BrownishNoise::new_with_scale(knob_a);
+                    let noise_id = context.add_stereo_node(noise);
+                    let noise_low_pass =
+                        context.add_stereo_node(ResonantLowPassFilter::new().cutoff(low_pass_freq));
+                    let noise_volume = context.add_stereo_node(Mul::new(volume));
+                    context.chain(vec![
+                        noise_id,
+                        noise_low_pass,
+                        noise_volume,
+                        context.destination,
+                    ]);
+                    NodeIndexSet::Brownish {
+                        volume: noise_volume,
+                        low_pass: noise_low_pass,
+                        knob_a: noise_id,
+                    }
+                }
+            };
+            let node_index_set = Some(node_index_set);
+            SourceConfig {
+                node_index_set,
+                params: source_config.params,
             }
-
-            Source::White => {}
-        }
-    }
-    settings.source_indices = node_indices;
-    // let settings = read_to_string("settings.toml")
-    let sin1 = context.add_stereo_node(SinOsc::new().freq(440.0));
+        })
+        .collect();
     let noise = BrownishNoise::new();
     let noise_id = context.add_stereo_node(noise);
     let noise_low_pass = context.add_stereo_node(ResonantLowPassFilter::new().cutoff(1000.0));
     let noise_volume = context.add_stereo_node(Mul::new(1.));
-    context.chain(vec![
-        noise_id,
-        noise_low_pass,
-        noise_volume,
-        context.destination,
-    ]);
+    // context.chain(vec![
+    //     noise_id,
+    //     noise_low_pass,
+    //     noise_volume,
+    //     context.destination,
+    // ]);
 
     let model = Audio {
         context,
@@ -307,7 +324,6 @@ fn model(app: &App) -> Model {
         brownish_low_pass_index: noise_low_pass,
     };
 
-    let mut brown = 0.;
     let stream = audio_host
         .new_output_stream(model)
         .render(render_audio)
