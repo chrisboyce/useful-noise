@@ -34,11 +34,15 @@ enum Source {
 impl Default for NewSettings {
     fn default() -> Self {
         Self {
-            sources: vec![Source::Brownish {
-                knob_a: 0.1,
-                volume: 0.5,
-                low_pass_freq: 500.0,
-            }],
+            sources: vec![
+                Source::Brownish {
+                    knob_a: 0.1,
+                    volume: 0.5,
+                    low_pass_freq: 500.0,
+                },
+                Source::White,
+            ],
+            source_indices: vec![],
         }
     }
 }
@@ -53,6 +57,8 @@ struct Model {
 #[derive(Serialize, Deserialize)]
 struct NewSettings {
     sources: Vec<Source>,
+    #[serde(skip)]
+    source_indices: Vec<NodeIndex>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -133,24 +139,53 @@ fn update(_app: &App, model: &mut Model, update: Update) {
     egui.set_elapsed_time(update.since_start);
     let ctx = egui.begin_frame();
 
-    egui::Window::new("Brownish Noise").show(&ctx, |ui| {
-        ui.label("Volume");
-        ui.add(egui::Slider::new(
-            &mut settings.brownish_noise_volume,
-            0.0..=1.0,
-        ));
-        ui.label("Low Pass");
-        ui.add(egui::Slider::new(
-            &mut settings.low_pass_freq,
-            0.0..=10000.0,
-        ));
+    for node in &model.new_settings.sources {
+        let title = &match node {
+            Source::Brownish {
+                // knob_a,
+                // volume,
+                // low_pass_freq,
+                ..
+            } => "Brownish Noise".to_string(),
+            Source::White => "White Noise".to_string(),
+        };
+        egui::Window::new(title).show(&ctx, |ui| {
+            ui.label("Volume");
+            // ui.add(egui::Slider::new(
+            //     &mut settings.brownish_noise_volume,
+            //     0.0..=1.0,
+            // ));
+            // ui.label("Low Pass");
+            // ui.add(egui::Slider::new(
+            //     &mut settings.low_pass_freq,
+            //     0.0..=10000.0,
+            // ));
 
-        ui.label("Knob A");
-        ui.add(egui::Slider::new(
-            &mut settings.brownish_noise_knob_a,
-            0.0..=1.0,
-        ));
-    });
+            // ui.label("Knob A");
+            // ui.add(egui::Slider::new(
+            //     &mut settings.brownish_noise_knob_a,
+            //     0.0..=1.0,
+            // ));
+        });
+    }
+    // egui::Window::new("Brownish Noise").show(&ctx, |ui| {
+    //     ui.label("Volume");
+    //     ui.add(egui::Slider::new(
+    //         &mut settings.brownish_noise_volume,
+    //         0.0..=1.0,
+    //     ));
+    //     ui.label("Low Pass");
+    //     ui.add(egui::Slider::new(
+    //         &mut settings.low_pass_freq,
+    //         0.0..=10000.0,
+    //     ));
+
+    //     ui.label("Knob A");
+    //     ui.add(egui::Slider::new(
+    //         &mut settings.brownish_noise_knob_a,
+    //         0.0..=1.0,
+    //     ));
+    // });
 
     let set_knob_a_message = Message::SetParam(
         0,
@@ -232,7 +267,19 @@ fn model(app: &App) -> Model {
                 ]);
             }
 
-            Source::White => todo!(),
+            Source::White => {
+                // let noise = BrownishNoise::new_with_scale(*knob_a);
+                // let noise_id = context.add_stereo_node(glicol_synth::signal::Noise::new(0));
+                // let noise_low_pass =
+                //     context.add_stereo_node(ResonantLowPassFilter::new().cutoff(*low_pass_freq));
+                // let noise_volume = context.add_stereo_node(Mul::new(*volume));
+                // context.chain(vec![
+                //     noise_id,
+                //     noise_low_pass,
+                //     noise_volume,
+                //     context.destination,
+                // ]);
+            }
         }
     }
     // let settings = read_to_string("settings.toml")
