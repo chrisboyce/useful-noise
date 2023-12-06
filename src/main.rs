@@ -1,3 +1,4 @@
+use std::fs::read_to_string;
 use std::path::Path;
 
 use glicol_synth::{oscillator::SinOsc, Node};
@@ -20,14 +21,38 @@ fn main() {
     nannou::app(model).exit(handle_exit).update(update).run();
 }
 
+#[derive(Serialize, Deserialize)]
 enum Source {
-    Brownish,
+    Brownish {
+        knob_a: f32,
+        volume: f32,
+        low_pass_freq: f32,
+    },
     White,
 }
+
+impl Default for NewSettings {
+    fn default() -> Self {
+        Self {
+            sources: vec![Source::Brownish {
+                knob_a: 0.1,
+                volume: 0.5,
+                low_pass_freq: 500.0,
+            }],
+        }
+    }
+}
+
 struct Model {
     egui: Egui,
+    new_settings: NewSettings,
     settings: Settings,
     stream: audio::Stream<Audio>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct NewSettings {
+    sources: Vec<Source>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -44,11 +69,14 @@ struct BrownishNoise {
 }
 
 impl BrownishNoise {
-    fn new() -> Self {
+    fn new_with_scale(scale: f32) -> Self {
         Self {
-            brown_walk_scale: 0.01,
+            brown_walk_scale: scale,
             previous_brown_value: 0.,
         }
+    }
+    fn new() -> Self {
+        Self::new_with_scale(0.1)
     }
 }
 
@@ -182,6 +210,32 @@ fn model(app: &App) -> Model {
         .channels(2)
         .build();
 
+    let settings = NewSettings::default();
+
+    for source in &settings.sources {
+        match source {
+            Source::Brownish {
+                knob_a,
+                volume,
+                low_pass_freq,
+            } => {
+                let noise = BrownishNoise::new_with_scale(*knob_a);
+                let noise_id = context.add_stereo_node(noise);
+                let noise_low_pass =
+                    context.add_stereo_node(ResonantLowPassFilter::new().cutoff(*low_pass_freq));
+                let noise_volume = context.add_stereo_node(Mul::new(*volume));
+                context.chain(vec![
+                    noise_id,
+                    noise_low_pass,
+                    noise_volume,
+                    context.destination,
+                ]);
+            }
+
+            Source::White => todo!(),
+        }
+    }
+    // let settings = read_to_string("settings.toml")
     let sin1 = context.add_stereo_node(SinOsc::new().freq(440.0));
     let noise = BrownishNoise::new();
     let noise_id = context.add_stereo_node(noise);
@@ -218,6 +272,7 @@ fn model(app: &App) -> Model {
             brownish_noise_volume: 0.65,
             low_pass_freq: 10000.0,
         },
+        new_settings: NewSettings::default(),
     }
 }
 /// Copies the audio data from the glicol buffer into the nannou audio buffer
