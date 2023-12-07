@@ -21,16 +21,16 @@ fn main() {
     nannou::app(model).exit(handle_exit).update(update).run();
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 enum NodeIndexSet {
     Brownish {
-        volume: NodeIndex,
-        low_pass: NodeIndex,
-        knob_a: NodeIndex,
+        volume_index: NodeIndex,
+        low_pass_index: NodeIndex,
+        knob_a_index: NodeIndex,
     },
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 enum SourceParam {
     Brownish {
         knob_a: f32,
@@ -140,9 +140,6 @@ impl<const N: usize> Node<N> for BrownishNoise {
 }
 
 struct Audio {
-    brownish_node_index: NodeIndex,
-    brownish_node_volume_index: NodeIndex,
-    brownish_low_pass_index: NodeIndex,
     context: AudioContext,
 }
 
@@ -153,98 +150,95 @@ fn update(_app: &App, model: &mut Model, update: Update) {
     egui.set_elapsed_time(update.since_start);
     let ctx = egui.begin_frame();
 
-    // Draw a UI element for each of the sources
-    for node in &model.new_settings.source_configs {
-        // for (i, node_index_set) in model.new_settings.source_indices.iter().enumerate() {
-        // let f = &model.new_settings.sources[i];
-        let title = &match node.node_index_set {
+    for source_config in &model.new_settings.source_configs {
+        // Determine the title based on the node type
+        let title = &match source_config.node_index_set {
             Some(NodeIndexSet::Brownish { .. }) => "Brownish Noise".to_string(),
             None => "Unknown node type".to_string(),
         };
+
+        // We "clone" the parameters (which in this case just copies the values)
+        // here so that we can use them for the glicol nodes. When we create the
+        //  UI elements which control the values in the `egui::Window` call, we
+        // "borrow" the parameters as mutable (a requirement in the signature of
+        // egui::Slider::new), so we can't again refer to these by
+        // reference afterward, due to Rust's requirement of either a single
+        // mutable reference, or any number of immutable references.
+        let params = source_config.params.clone();
+        let node_indices = source_config.node_index_set.clone();
         egui::Window::new(title).show(&ctx, |ui| {
-            match node.params {
+            // Draw the UI controls for the given type of node
+            match source_config.params {
+                SourceParam::Brownish {
+                    mut knob_a,
+                    mut volume,
+                    mut low_pass_freq,
+                } => {
+                    ui.label("Volume");
+                    ui.add(egui::Slider::new(&mut volume, 0.0..=1.0));
+                    ui.label("Low Pass");
+                    ui.add(egui::Slider::new(&mut low_pass_freq, 0.0..=10000.0));
+                    ui.label("Knob A");
+                    ui.add(egui::Slider::new(&mut knob_a, 0.0..=1.0));
+                }
+            }
+        });
+
+        match (node_indices, params) {
+            (
+                Some(NodeIndexSet::Brownish {
+                    volume_index: volume_index,
+                    low_pass_index: low_pass_index,
+                    knob_a_index: knob_a_index,
+                }),
                 SourceParam::Brownish {
                     knob_a,
                     volume,
                     low_pass_freq,
-                } => {
-                    ui.label("Volume");
-                    //     // ui.add(egui::Slider::new(
-                    //     //     &mut settings.brownish_noise_volume,
-                    //     //     0.0..=1.0,
-                    //     // ));
-                    //     // ui.label("Low Pass");
-                    //     // ui.add(egui::Slider::new(
-                    //     //     &mut settings.low_pass_freq,
-                    //     //     0.0..=10000.0,
-                    //     // ));
-
-                    //     // ui.label("Knob A");
-                    //     // ui.add(egui::Slider::new(
-                    //     //     &mut settings.brownish_noise_knob_a,
-                    //     //     0.0..=1.0,
-                    //     // ));
-                } // NodeIndexSet::Brownish {
-                  //     volume,
-                  //     low_pass,
-                  //     knob_a,
-                  // } => {
-                  // }
+                },
+            ) => {
+                // Create a message to send to this node to update the value
+                let set_knob_a_message =
+                    Message::SetParam(0, glicol_synth::GlicolPara::Number(knob_a));
+                model
+                    .stream
+                    .send(move |audio: &mut Audio| {
+                        audio.context.send_msg(knob_a_index, set_knob_a_message)
+                    })
+                    .unwrap();
             }
-        });
+            _ => todo!(),
+            // Some(NodeIndexSet::Brownish {
+            //     volume,
+            //     low_pass,
+            //     knob_a,
+            // }) => {
+            // }
+            // None => todo!(),
+        }
+
+        // let set_volume_message = Message::SetToNumber(0, settings.brownish_noise_volume);
+        // model
+        //     .stream
+        //     .send(move |audio: &mut Audio| {
+        //         audio
+        //             .context
+        //             .send_msg(audio.brownish_node_volume_index, set_volume_message)
+        //     })
+        //     .unwrap();
+
+        // let set_low_pass_message = Message::SetToNumber(0, settings.low_pass_freq);
+        // model
+        //     .stream
+        //     .send(move |audio: &mut Audio| {
+        //         audio
+        //             .context
+        //             .send_msg(audio.brownish_low_pass_index, set_low_pass_message)
+        //     })
+        //     .unwrap();
     }
-    // egui::Window::new("Brownish Noise").show(&ctx, |ui| {
-    //     ui.label("Volume");
-    //     ui.add(egui::Slider::new(
-    //         &mut settings.brownish_noise_volume,
-    //         0.0..=1.0,
-    //     ));
-    //     ui.label("Low Pass");
-    //     ui.add(egui::Slider::new(
-    //         &mut settings.low_pass_freq,
-    //         0.0..=10000.0,
-    //     ));
-
-    //     ui.label("Knob A");
-    //     ui.add(egui::Slider::new(
-    //         &mut settings.brownish_noise_knob_a,
-    //         0.0..=1.0,
-    //     ));
-    // });
-
-    let set_knob_a_message = Message::SetParam(
-        0,
-        glicol_synth::GlicolPara::Number(settings.brownish_noise_knob_a),
-    );
-    model
-        .stream
-        .send(move |audio: &mut Audio| {
-            audio
-                .context
-                .send_msg(audio.brownish_node_index, set_knob_a_message)
-        })
-        .unwrap();
-
-    let set_volume_message = Message::SetToNumber(0, settings.brownish_noise_volume);
-    model
-        .stream
-        .send(move |audio: &mut Audio| {
-            audio
-                .context
-                .send_msg(audio.brownish_node_volume_index, set_volume_message)
-        })
-        .unwrap();
-
-    let set_low_pass_message = Message::SetToNumber(0, settings.low_pass_freq);
-    model
-        .stream
-        .send(move |audio: &mut Audio| {
-            audio
-                .context
-                .send_msg(audio.brownish_low_pass_index, set_low_pass_message)
-        })
-        .unwrap();
 }
+
 fn model(app: &App) -> Model {
     // Create a window to receive key pressed events.
     let window_id = app
@@ -293,9 +287,9 @@ fn model(app: &App) -> Model {
                         context.destination,
                     ]);
                     NodeIndexSet::Brownish {
-                        volume: noise_volume,
-                        low_pass: noise_low_pass,
-                        knob_a: noise_id,
+                        volume_index: noise_volume,
+                        low_pass_index: noise_low_pass,
+                        knob_a_index: noise_id,
                     }
                 }
             };
@@ -317,12 +311,7 @@ fn model(app: &App) -> Model {
     //     context.destination,
     // ]);
 
-    let model = Audio {
-        context,
-        brownish_node_index: noise_id,
-        brownish_node_volume_index: noise_volume,
-        brownish_low_pass_index: noise_low_pass,
-    };
+    let model = Audio { context };
 
     let stream = audio_host
         .new_output_stream(model)
