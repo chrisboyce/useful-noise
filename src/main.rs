@@ -164,8 +164,6 @@ fn update(_app: &App, model: &mut Model, update: Update) {
         // egui::Slider::new), so we can't again refer to these by
         // reference afterward, due to Rust's requirement of either a single
         // mutable reference, or any number of immutable references.
-        let params = source_config.params.clone();
-        let node_indices = source_config.node_index_set.clone();
         egui::Window::new(title).show(&ctx, |ui| {
             // Draw the UI controls for the given type of node
             match source_config.params {
@@ -184,6 +182,8 @@ fn update(_app: &App, model: &mut Model, update: Update) {
             }
         });
 
+        let params = source_config.params.clone();
+        let node_indices = source_config.node_index_set.clone();
         match (node_indices, params) {
             (
                 Some(NodeIndexSet::Brownish {
@@ -203,18 +203,12 @@ fn update(_app: &App, model: &mut Model, update: Update) {
                 model
                     .stream
                     .send(move |audio: &mut Audio| {
+                        println!("{knob_a}");
                         audio.context.send_msg(knob_a_index, set_knob_a_message)
                     })
                     .unwrap();
             }
             _ => todo!(),
-            // Some(NodeIndexSet::Brownish {
-            //     volume,
-            //     low_pass,
-            //     knob_a,
-            // }) => {
-            // }
-            // None => todo!(),
         }
 
         // let set_volume_message = Message::SetToNumber(0, settings.brownish_noise_volume);
