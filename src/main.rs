@@ -49,13 +49,11 @@ struct SourceConfig {
 impl Default for NewSettings {
     fn default() -> Self {
         Self {
-            source_configs: vec![SourceConfig {
-                params: SourceParam::Brownish {
-                    knob_a: 0.1,
-                    volume: 0.5,
-                    low_pass_freq: 500.0,
-                },
-                node_index_set: None,
+            glicol_indices: vec![],
+            ui_params: vec![SourceParam::Brownish {
+                knob_a: 0.1,
+                volume: 0.5,
+                low_pass_freq: 500.0,
             }],
         }
     }
@@ -70,9 +68,12 @@ struct Model {
 
 #[derive(Serialize, Deserialize)]
 struct NewSettings {
-    source_configs: Vec<SourceConfig>, // sources: Vec<SourceParam>,
-                                       // #[serde(skip)]
-                                       // source_indices: Vec<NodeIndexSet>,
+    #[serde(skip)]
+    glicol_indices: Vec<NodeIndexSet>,
+    ui_params: Vec<SourceParam>,
+    // source_configs: Vec<SourceConfig>, // sources: Vec<SourceParam>,
+    // #[serde(skip)]
+    // source_indices: Vec<NodeIndexSet>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -145,71 +146,105 @@ struct Audio {
 
 fn update(_app: &App, model: &mut Model, update: Update) {
     let egui = &mut model.egui;
-    let settings = &mut model.settings;
 
     egui.set_elapsed_time(update.since_start);
     let ctx = egui.begin_frame();
+    for index in 0..model.new_settings.ui_params.len() {
+        let ui_param = model.new_settings.ui_params.get(index);
+        let glicol_indices = model.new_settings.glicol_indices.get(index);
 
-    for source_config in &model.new_settings.source_configs {
-        // Determine the title based on the node type
-        let title = &match source_config.node_index_set {
-            Some(NodeIndexSet::Brownish { .. }) => "Brownish Noise".to_string(),
-            None => "Unknown node type".to_string(),
-        };
-
-        // We "clone" the parameters (which in this case just copies the values)
-        // here so that we can use them for the glicol nodes. When we create the
-        //  UI elements which control the values in the `egui::Window` call, we
-        // "borrow" the parameters as mutable (a requirement in the signature of
-        // egui::Slider::new), so we can't again refer to these by
-        // reference afterward, due to Rust's requirement of either a single
-        // mutable reference, or any number of immutable references.
-        egui::Window::new(title).show(&ctx, |ui| {
-            // Draw the UI controls for the given type of node
-            match source_config.params {
-                SourceParam::Brownish {
-                    mut knob_a,
-                    mut volume,
-                    mut low_pass_freq,
-                } => {
-                    ui.label("Volume");
-                    ui.add(egui::Slider::new(&mut volume, 0.0..=1.0));
-                    ui.label("Low Pass");
-                    ui.add(egui::Slider::new(&mut low_pass_freq, 0.0..=10000.0));
-                    ui.label("Knob A");
-                    ui.add(egui::Slider::new(&mut knob_a, 0.0..=1.0));
-                }
-            }
-        });
-
-        let params = source_config.params.clone();
-        let node_indices = source_config.node_index_set.clone();
-        match (node_indices, params) {
+        match (glicol_indices, &ui_param) {
             (
                 Some(NodeIndexSet::Brownish {
-                    volume_index: volume_index,
-                    low_pass_index: low_pass_index,
-                    knob_a_index: knob_a_index,
+                    volume_index,
+                    low_pass_index,
+                    knob_a_index,
                 }),
-                SourceParam::Brownish {
+                Some(SourceParam::Brownish {
                     knob_a,
-                    volume,
+                    mut volume,
                     low_pass_freq,
-                },
+                }),
             ) => {
+                let title = "Brownish Noise".to_string();
+                let knob_a_index = knob_a_index.clone();
                 // Create a message to send to this node to update the value
                 let set_knob_a_message =
-                    Message::SetParam(0, glicol_synth::GlicolPara::Number(knob_a));
+                    Message::SetParam(0, glicol_synth::GlicolPara::Number(*knob_a));
                 model
                     .stream
                     .send(move |audio: &mut Audio| {
-                        println!("{knob_a}");
-                        audio.context.send_msg(knob_a_index, set_knob_a_message)
+                        println!("{:?}", &set_knob_a_message);
+                        audio
+                            .context
+                            // .send_msg(NodeIndex::new(1), set_knob_a_message)
+                            .send_msg(knob_a_index, set_knob_a_message)
                     })
                     .unwrap();
+                egui::Window::new(title).show(&ctx, |ui| {
+                    ui.label("Volume");
+                    ui.add(egui::Slider::new(
+                        &mut volume,
+                        // &mut model.settings.brownish_noise_volume,
+                        0.0..=1.0,
+                    ));
+                });
             }
-            _ => todo!(),
+
+            (_, _) => todo!(),
         }
+
+        // egui::Window::new(title).show(&ctx, |ui| {
+        //     // Draw the UI controls for the given type of node
+        //     match ui_param {
+        //         SourceParam::Brownish {
+        //             knob_a,
+        //             mut volume,
+        //             low_pass_freq,
+        //         } => {
+        //             let mut f = 0.0;
+        //             ui.label("Volume");
+        //             ui.add(egui::Slider::new(
+        //                 &mut volume,
+        //                 // &mut model.settings.brownish_noise_volume,
+        //                 0.0..=1.0,
+        //             ));
+        //             // ui.label("Low Pass");
+        //             // ui.add(egui::Slider::new(&mut low_pass_freq, 0.0..=10000.0));
+        //             // ui.label("Knob A");
+        //             // ui.add(egui::Slider::new(&mut knob_a, 0.0..=1.0));
+        //         }
+        //     }
+        // });
+
+        // let params = source_config.params.clone();
+        // let node_indices = source_config.node_index_set.clone();
+        // match (node_indices, params) {
+        //     (
+        //         Some(NodeIndexSet::Brownish {
+        //             volume_index: volume_index,
+        //             low_pass_index: low_pass_index,
+        //             knob_a_index: knob_a_index,
+        //         }),
+        //         SourceParam::Brownish {
+        //             knob_a,
+        //             volume,
+        //             low_pass_freq,
+        //         },
+        //     ) => {
+        //         // Create a message to send to this node to update the value
+        //         let set_knob_a_message =
+        //             Message::SetParam(0, glicol_synth::GlicolPara::Number(knob_a));
+        //         model
+        //             .stream
+        //             .send(move |audio: &mut Audio| {
+        //                 println!("{knob_a}");
+        //                 audio.context.send_msg(knob_a_index, set_knob_a_message)
+        //             })
+        //             .unwrap();
+        //     }
+        //     _ => todo!(),
+        // }
 
         // let set_volume_message = Message::SetToNumber(0, settings.brownish_noise_volume);
         // model
@@ -258,46 +293,80 @@ fn model(app: &App) -> Model {
         .build();
 
     let mut settings = NewSettings::default();
+    let mut glicol_indices = vec![];
+    // let mut ui_params = vec![];
 
-    settings.source_configs = settings
-        .source_configs
-        .into_iter()
-        .map(|source_config| {
-            let node_index_set = match source_config.params {
-                SourceParam::Brownish {
-                    knob_a,
-                    volume,
-                    low_pass_freq,
-                } => {
-                    let noise = BrownishNoise::new_with_scale(knob_a);
-                    let noise_id = context.add_stereo_node(noise);
-                    let noise_low_pass =
-                        context.add_stereo_node(ResonantLowPassFilter::new().cutoff(low_pass_freq));
-                    let noise_volume = context.add_stereo_node(Mul::new(volume));
-                    context.chain(vec![
-                        noise_id,
-                        noise_low_pass,
-                        noise_volume,
-                        context.destination,
-                    ]);
-                    NodeIndexSet::Brownish {
-                        volume_index: noise_volume,
-                        low_pass_index: noise_low_pass,
-                        knob_a_index: noise_id,
-                    }
+    for ui_param in &settings.ui_params {
+        let node_index_set = match ui_param {
+            SourceParam::Brownish {
+                knob_a,
+                volume,
+                low_pass_freq,
+            } => {
+                let noise = BrownishNoise::new_with_scale(*knob_a);
+                let noise_id = context.add_stereo_node(noise);
+                let noise_low_pass =
+                    context.add_stereo_node(ResonantLowPassFilter::new().cutoff(*low_pass_freq));
+                let noise_volume = context.add_stereo_node(Mul::new(*volume));
+                context.chain(vec![
+                    noise_id,
+                    noise_low_pass,
+                    noise_volume,
+                    context.destination,
+                ]);
+                NodeIndexSet::Brownish {
+                    volume_index: noise_volume,
+                    low_pass_index: noise_low_pass,
+                    knob_a_index: noise_id,
                 }
-            };
-            let node_index_set = Some(node_index_set);
-            SourceConfig {
-                node_index_set,
-                params: source_config.params,
             }
-        })
-        .collect();
-    let noise = BrownishNoise::new();
-    let noise_id = context.add_stereo_node(noise);
-    let noise_low_pass = context.add_stereo_node(ResonantLowPassFilter::new().cutoff(1000.0));
-    let noise_volume = context.add_stereo_node(Mul::new(1.));
+        };
+        glicol_indices.push(node_index_set);
+        // let node_index_set = Some(node_index_set);
+        // SourceConfig {
+        //     node_index_set,
+        //     params: source_config.params,
+        // }
+    }
+    // settings.source_configs = settings
+    //     .source_configs
+    //     .into_iter()
+    //     .map(|source_config| {
+    //         let node_index_set = match source_config.params {
+    //             SourceParam::Brownish {
+    //                 knob_a,
+    //                 volume,
+    //                 low_pass_freq,
+    //             } => {
+    //                 let noise = BrownishNoise::new_with_scale(knob_a);
+    //                 let noise_id = context.add_stereo_node(noise);
+    //                 let noise_low_pass =
+    //                     context.add_stereo_node(ResonantLowPassFilter::new().cutoff(low_pass_freq));
+    //                 let noise_volume = context.add_stereo_node(Mul::new(volume));
+    //                 context.chain(vec![
+    //                     noise_id,
+    //                     noise_low_pass,
+    //                     noise_volume,
+    //                     context.destination,
+    //                 ]);
+    //                 NodeIndexSet::Brownish {
+    //                     volume_index: noise_volume,
+    //                     low_pass_index: noise_low_pass,
+    //                     knob_a_index: noise_id,
+    //                 }
+    //             }
+    //         };
+    //         let node_index_set = Some(node_index_set);
+    //         SourceConfig {
+    //             node_index_set,
+    //             params: source_config.params,
+    //         }
+    //     })
+    //     .collect();
+    // let noise = BrownishNoise::new();
+    // let noise_id = context.add_stereo_node(noise);
+    // let noise_low_pass = context.add_stereo_node(ResonantLowPassFilter::new().cutoff(1000.0));
+    // let noise_volume = context.add_stereo_node(Mul::new(1.));
     // context.chain(vec![
     //     noise_id,
     //     noise_low_pass,
@@ -305,6 +374,7 @@ fn model(app: &App) -> Model {
     //     context.destination,
     // ]);
 
+    settings.glicol_indices = glicol_indices;
     let model = Audio { context };
 
     let stream = audio_host
