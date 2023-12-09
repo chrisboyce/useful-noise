@@ -1,5 +1,7 @@
 use glicol_synth::{
-    filter::ResonantLowPassFilter, operator::Mul, oscillator::SinOsc,
+    filter::{ResonantHighPassFilter, ResonantLowPassFilter},
+    operator::Mul,
+    oscillator::SinOsc,
     AudioContext as GlicolAudioContext, AudioContextBuilder, Message,
 };
 use nannou::prelude::*;
@@ -162,15 +164,15 @@ fn model(app: &App) -> state::Model {
                 // for the low-pass cut-off and one for the volume control.
                 // These are then "chained" in a sequence, effectively passing
                 // our noise signal through a series of filters.
-                let knob_a_index = context.add_stereo_node(BrownishNoise::new_with_scale(*knob_a));
+                let knob_a_index = context.add_mono_node(BrownishNoise::new_with_scale(*knob_a));
                 let low_pass_index =
-                    context.add_stereo_node(ResonantLowPassFilter::new().cutoff(*low_pass_freq));
-                let volume_index = context.add_stereo_node(Mul::new(*volume));
+                    context.add_mono_node(ResonantLowPassFilter::new().cutoff(*low_pass_freq));
+                let volume_index = context.add_mono_node(Mul::new(*volume));
 
                 context.chain(vec![
                     knob_a_index,
-                    low_pass_index,
                     volume_index,
+                    low_pass_index,
                     context.destination,
                 ]);
 
@@ -187,8 +189,8 @@ fn model(app: &App) -> state::Model {
             // Handle sine wave config
             sound::SoundParam::Sine { volume, freq } => {
                 let sine = SinOsc::new().freq(*freq);
-                let sine_id = context.add_stereo_node(sine);
-                let sine_volume = context.add_stereo_node(Mul::new(*volume));
+                let sine_id = context.add_mono_node(sine);
+                let sine_volume = context.add_mono_node(Mul::new(*volume));
                 context.chain(vec![sine_id, sine_volume, context.destination]);
                 sound::NodeIndexSet::Sine {
                     volume_index: sine_volume,
