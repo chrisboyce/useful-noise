@@ -76,7 +76,7 @@ fn update(_app: &App, model: &mut state::Model, update: Update) {
                     ui.label("Volume");
                     ui.add(egui::Slider::new(volume, 0.0..=1.0));
                     ui.label("Low Pass Frequency");
-                    ui.add(egui::Slider::new(low_pass_freq, 0.0..=10000.0));
+                    ui.add(egui::Slider::new(low_pass_freq, 0.0..=5000.0));
                     ui.label("Knob A");
                     ui.add(egui::Slider::new(knob_a, 0.0..=1.0));
                 });
@@ -110,7 +110,7 @@ fn update(_app: &App, model: &mut state::Model, update: Update) {
                     ui.label("Volume");
                     ui.add(egui::Slider::new(volume, 0.0..=1.0));
                     ui.label("Frequency");
-                    ui.add(egui::Slider::new(freq, 40.0..=10000.0));
+                    ui.add(egui::Slider::new(freq, 40.0..=440.0));
                 });
             }
             (_, _) => todo!(),
