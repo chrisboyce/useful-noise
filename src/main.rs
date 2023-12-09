@@ -49,12 +49,12 @@ struct SourceConfig {
 impl Default for NewSettings {
     fn default() -> Self {
         Self {
-            glicol_indices: [None],
-            ui_params: [Some(SourceParam::Brownish {
+            glicol_indices: vec![],
+            ui_params: vec![SourceParam::Brownish {
                 knob_a: 0.1,
                 volume: 0.5,
                 low_pass_freq: 500.0,
-            })],
+            }],
         }
     }
 }
@@ -70,8 +70,8 @@ const MAX_NODES: usize = 1;
 #[derive(Serialize, Deserialize)]
 struct NewSettings {
     #[serde(skip)]
-    glicol_indices: [Option<NodeIndexSet>; MAX_NODES],
-    ui_params: [Option<SourceParam>; MAX_NODES],
+    glicol_indices: Vec<NodeIndexSet>,
+    ui_params: Vec<SourceParam>,
     // source_configs: Vec<SourceConfig>, // sources: Vec<SourceParam>,
     // #[serde(skip)]
     // source_indices: Vec<NodeIndexSet>,
@@ -82,6 +82,7 @@ struct Settings {
     brownish_noise_knob_a: f32,
     brownish_noise_volume: f32,
     low_pass_freq: f32,
+    param: SourceParam,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -151,19 +152,21 @@ fn update(_app: &App, model: &mut Model, update: Update) {
     egui.set_elapsed_time(update.since_start);
     let ctx = egui.begin_frame();
 
-    if let Some(SourceParam::Brownish {
+    let params = model.settings.param.clone();
+
+    if let SourceParam::Brownish {
         knob_a,
-        mut volume,
+        volume,
         low_pass_freq,
-    }) = model.new_settings.ui_params[0]
+    } = &mut model.settings.param
     {
-        egui::Window::new("Fooba").show(&ctx, |ui| {
+        egui::Window::new("Brownish Noise").show(&ctx, |ui| {
             ui.label("Volume");
-            ui.add(egui::Slider::new(
-                &mut volume,
-                // &mut model.settings.brownish_noise_volume,
-                0.0..=1.0,
-            ));
+            ui.add(egui::Slider::new(volume, 0.0..=1.0));
+            ui.label("Low Pass Frequency");
+            ui.add(egui::Slider::new(low_pass_freq, 0.0..=1.0));
+            ui.label("Knob A");
+            ui.add(egui::Slider::new(knob_a, 0.0..=1.0));
         });
     }
 
@@ -312,16 +315,15 @@ fn model(app: &App) -> Model {
         .build();
 
     let mut settings = NewSettings::default();
-    let mut glicol_indices = [None];
-    // let mut ui_params = vec![];
+    let mut glicol_indices = vec![];
 
-    for (index, ui_param) in settings.ui_params.iter().enumerate() {
+    for ui_param in &settings.ui_params {
         let node_index_set = match ui_param {
-            Some(SourceParam::Brownish {
+            SourceParam::Brownish {
                 knob_a,
                 volume,
                 low_pass_freq,
-            }) => {
+            } => {
                 let noise = BrownishNoise::new_with_scale(*knob_a);
                 let noise_id = context.add_stereo_node(noise);
                 let noise_low_pass =
@@ -333,66 +335,15 @@ fn model(app: &App) -> Model {
                     noise_volume,
                     context.destination,
                 ]);
-                Some(NodeIndexSet::Brownish {
+                NodeIndexSet::Brownish {
                     volume_index: noise_volume,
                     low_pass_index: noise_low_pass,
                     knob_a_index: noise_id,
-                })
+                }
             }
-            None => None,
         };
-        glicol_indices[index] = node_index_set;
-        // let node_index_set = Some(node_index_set);
-        // SourceConfig {
-        //     node_index_set,
-        //     params: source_config.params,
-        // }
+        glicol_indices.push(node_index_set);
     }
-    // settings.source_configs = settings
-    //     .source_configs
-    //     .into_iter()
-    //     .map(|source_config| {
-    //         let node_index_set = match source_config.params {
-    //             SourceParam::Brownish {
-    //                 knob_a,
-    //                 volume,
-    //                 low_pass_freq,
-    //             } => {
-    //                 let noise = BrownishNoise::new_with_scale(knob_a);
-    //                 let noise_id = context.add_stereo_node(noise);
-    //                 let noise_low_pass =
-    //                     context.add_stereo_node(ResonantLowPassFilter::new().cutoff(low_pass_freq));
-    //                 let noise_volume = context.add_stereo_node(Mul::new(volume));
-    //                 context.chain(vec![
-    //                     noise_id,
-    //                     noise_low_pass,
-    //                     noise_volume,
-    //                     context.destination,
-    //                 ]);
-    //                 NodeIndexSet::Brownish {
-    //                     volume_index: noise_volume,
-    //                     low_pass_index: noise_low_pass,
-    //                     knob_a_index: noise_id,
-    //                 }
-    //             }
-    //         };
-    //         let node_index_set = Some(node_index_set);
-    //         SourceConfig {
-    //             node_index_set,
-    //             params: source_config.params,
-    //         }
-    //     })
-    //     .collect();
-    // let noise = BrownishNoise::new();
-    // let noise_id = context.add_stereo_node(noise);
-    // let noise_low_pass = context.add_stereo_node(ResonantLowPassFilter::new().cutoff(1000.0));
-    // let noise_volume = context.add_stereo_node(Mul::new(1.));
-    // context.chain(vec![
-    //     noise_id,
-    //     noise_low_pass,
-    //     noise_volume,
-    //     context.destination,
-    // ]);
 
     settings.glicol_indices = glicol_indices;
     let model = Audio { context };
@@ -412,6 +363,11 @@ fn model(app: &App) -> Model {
             brownish_noise_knob_a: 0.07,
             brownish_noise_volume: 0.65,
             low_pass_freq: 10000.0,
+            param: SourceParam::Brownish {
+                knob_a: 0.0,
+                volume: 0.0,
+                low_pass_freq: 0.0,
+            },
         },
         new_settings: settings,
     }
