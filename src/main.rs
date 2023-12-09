@@ -5,16 +5,19 @@ use glicol_synth::{
 use nannou::prelude::*;
 use nannou_audio::{self as audio, Buffer};
 use nannou_egui::{self, egui, Egui};
-
-const SAMPLE_RATE: usize = 44_1000;
-const FRAME_SIZE: usize = 64;
-type AudioContext = GlicolAudioContext<FRAME_SIZE>;
-fn main() {
-    nannou::app(model).exit(handle_exit).update(update).run();
-}
+use sound::brownish_noise::BrownishNoise;
 
 mod sound;
 mod state;
+
+const SAMPLE_RATE: usize = 44_1000;
+const FRAME_SIZE: usize = 64;
+
+type AudioContext = GlicolAudioContext<FRAME_SIZE>;
+
+fn main() {
+    nannou::app(model).exit(handle_exit).update(update).run();
+}
 
 fn update(_app: &App, model: &mut state::Model, update: Update) {
     let egui = &mut model.egui;
@@ -30,7 +33,7 @@ fn update(_app: &App, model: &mut state::Model, update: Update) {
     {
         match (ui_params, glicol_indices) {
             (
-                sound::SourceParam::Brownish {
+                sound::SoundParam::Brownish {
                     knob_a,
                     volume,
                     low_pass_freq,
@@ -79,7 +82,7 @@ fn update(_app: &App, model: &mut state::Model, update: Update) {
                 });
             }
             (
-                sound::SourceParam::Sine { volume, freq },
+                sound::SoundParam::Sine { volume, freq },
                 sound::NodeIndexSet::Sine {
                     volume_index,
                     freq_index,
@@ -148,7 +151,7 @@ fn model(app: &App) -> state::Model {
         // based on which type of `SourceParam` we're setting up
         let node_index_set = match ui_param {
             // Handle "Brownish" noise
-            sound::SourceParam::Brownish {
+            sound::SoundParam::Brownish {
                 knob_a,
                 volume,
                 low_pass_freq,
@@ -159,8 +162,7 @@ fn model(app: &App) -> state::Model {
                 // for the low-pass cut-off and one for the volume control.
                 // These are then "chained" in a sequence, effectively passing
                 // our noise signal through a series of filters.
-                let knob_a_index =
-                    context.add_stereo_node(sound::BrownishNoise::new_with_scale(*knob_a));
+                let knob_a_index = context.add_stereo_node(BrownishNoise::new_with_scale(*knob_a));
                 let low_pass_index =
                     context.add_stereo_node(ResonantLowPassFilter::new().cutoff(*low_pass_freq));
                 let volume_index = context.add_stereo_node(Mul::new(*volume));
@@ -183,7 +185,7 @@ fn model(app: &App) -> state::Model {
             }
 
             // Handle sine wave config
-            sound::SourceParam::Sine { volume, freq } => {
+            sound::SoundParam::Sine { volume, freq } => {
                 let sine = SinOsc::new().freq(*freq);
                 let sine_id = context.add_stereo_node(sine);
                 let sine_volume = context.add_stereo_node(Mul::new(*volume));
