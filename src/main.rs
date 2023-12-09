@@ -154,20 +154,27 @@ fn update(_app: &App, model: &mut Model, update: Update) {
 
     let params = model.settings.param.clone();
 
-    if let SourceParam::Brownish {
-        knob_a,
-        volume,
-        low_pass_freq,
-    } = &mut model.settings.param
+    for (mut ui_params, glicol_indices) in model
+        .new_settings
+        .ui_params
+        .iter_mut()
+        .zip(model.new_settings.glicol_indices.iter())
     {
-        egui::Window::new("Brownish Noise").show(&ctx, |ui| {
-            ui.label("Volume");
-            ui.add(egui::Slider::new(volume, 0.0..=1.0));
-            ui.label("Low Pass Frequency");
-            ui.add(egui::Slider::new(low_pass_freq, 0.0..=1.0));
-            ui.label("Knob A");
-            ui.add(egui::Slider::new(knob_a, 0.0..=1.0));
-        });
+        if let SourceParam::Brownish {
+            knob_a,
+            volume,
+            low_pass_freq,
+        } = &mut ui_params
+        {
+            egui::Window::new("Brownish Noise").show(&ctx, |ui| {
+                ui.label("Volume");
+                ui.add(egui::Slider::new(volume, 0.0..=1.0));
+                ui.label("Low Pass Frequency");
+                ui.add(egui::Slider::new(low_pass_freq, 0.0..=1.0));
+                ui.label("Knob A");
+                ui.add(egui::Slider::new(knob_a, 0.0..=1.0));
+            });
+        }
     }
 
     // for index in 0..model.new_settings.ui_params.len() {
