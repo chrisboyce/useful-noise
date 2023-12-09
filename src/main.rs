@@ -47,21 +47,14 @@ enum SourceParam {
     },
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-struct SourceConfig {
-    #[serde(skip)]
-    node_index_set: Option<NodeIndexSet>,
-    params: SourceParam,
-}
-
-impl Default for NewSettings {
+impl Default for Settings {
     fn default() -> Self {
         Self {
             glicol_indices: vec![],
             ui_params: vec![
                 SourceParam::Sine {
-                    volume: 0.1,
-                    freq: 100.0,
+                    volume: 0.5,
+                    freq: 200.0,
                 },
                 SourceParam::Brownish {
                     knob_a: 0.1,
@@ -75,25 +68,15 @@ impl Default for NewSettings {
 
 struct Model {
     egui: Egui,
-    new_settings: NewSettings,
     settings: Settings,
     stream: audio::Stream<Audio>,
 }
 
-const MAX_NODES: usize = 1;
 #[derive(Serialize, Deserialize)]
-struct NewSettings {
+struct Settings {
     #[serde(skip)]
     glicol_indices: Vec<NodeIndexSet>,
     ui_params: Vec<SourceParam>,
-}
-
-#[derive(Serialize, Deserialize)]
-struct Settings {
-    brownish_noise_knob_a: f32,
-    brownish_noise_volume: f32,
-    low_pass_freq: f32,
-    param: SourceParam,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -163,13 +146,11 @@ fn update(_app: &App, model: &mut Model, update: Update) {
     egui.set_elapsed_time(update.since_start);
     let ctx = egui.begin_frame();
 
-    let params = model.settings.param.clone();
-
-    for (mut ui_params, glicol_indices) in model
-        .new_settings
+    for (ui_params, glicol_indices) in model
+        .settings
         .ui_params
         .iter_mut()
-        .zip(model.new_settings.glicol_indices.iter())
+        .zip(model.settings.glicol_indices.iter())
     {
         match (ui_params, glicol_indices) {
             (
@@ -185,8 +166,7 @@ fn update(_app: &App, model: &mut Model, update: Update) {
                 },
             ) => {
                 let volume_index = volume_index.clone();
-                let set_volume_message =
-                    Message::SetParam(0, glicol_synth::GlicolPara::Number(*volume));
+                let set_volume_message = Message::SetToNumber(0, *volume);
                 model
                     .stream
                     .send(move |audio: &mut Audio| {
@@ -195,8 +175,7 @@ fn update(_app: &App, model: &mut Model, update: Update) {
                     .unwrap();
 
                 let low_pass_index = low_pass_index.clone();
-                let set_low_pass_message =
-                    Message::SetParam(0, glicol_synth::GlicolPara::Number(*low_pass_freq));
+                let set_low_pass_message = Message::SetToNumber(0, *low_pass_freq);
                 model
                     .stream
                     .send(move |audio: &mut Audio| {
@@ -231,8 +210,7 @@ fn update(_app: &App, model: &mut Model, update: Update) {
                 },
             ) => {
                 let volume_index = volume_index.clone();
-                let set_volume_message =
-                    Message::SetParam(0, glicol_synth::GlicolPara::Number(*volume));
+                let set_volume_message = Message::SetToNumber(0, *volume);
                 model
                     .stream
                     .send(move |audio: &mut Audio| {
@@ -241,8 +219,7 @@ fn update(_app: &App, model: &mut Model, update: Update) {
                     .unwrap();
 
                 let freq_index = freq_index.clone();
-                let set_freq_message =
-                    Message::SetParam(0, glicol_synth::GlicolPara::Number(*freq));
+                let set_freq_message = Message::SetToNumber(0, *freq);
                 model
                     .stream
                     .send(move |audio: &mut Audio| {
@@ -254,7 +231,7 @@ fn update(_app: &App, model: &mut Model, update: Update) {
                     ui.label("Volume");
                     ui.add(egui::Slider::new(volume, 0.0..=1.0));
                     ui.label("Frequency");
-                    ui.add(egui::Slider::new(volume, 40.0..=10000.0));
+                    ui.add(egui::Slider::new(freq, 40.0..=10000.0));
                 });
             }
             (_, _) => todo!(),
@@ -267,7 +244,7 @@ fn model(app: &App) -> Model {
     let window_id = app
         .new_window()
         .title("Useful Noise 🔊")
-        .size(240, 200)
+        .size(400, 400)
         .key_pressed(key_pressed)
         .view(view)
         .raw_event(raw_window_event)
@@ -286,11 +263,24 @@ fn model(app: &App) -> Model {
         .channels(2)
         .build();
 
-    let mut settings = NewSettings::default();
+    let mut settings = if let Ok(toml) = std::fs::read_to_string("useful-noise.toml") {
+        let settings = toml::from_str::<Settings>(&toml);
+        if let Ok(settings) = settings {
+            settings
+        } else {
+            Settings::default()
+        }
+    } else {
+        Settings::default()
+    };
+    // let settings = toml::to_string(&model.settings).unwrap();
+    // std::fs::write("useful-noise.toml", settings).unwrap();
+    // let mut settings = Settings::default();
     let mut glicol_indices = vec![];
 
     for ui_param in &settings.ui_params {
         let node_index_set = match ui_param {
+            // Handle "Brownish" noise
             SourceParam::Brownish {
                 knob_a,
                 volume,
@@ -313,10 +303,12 @@ fn model(app: &App) -> Model {
                     knob_a_index: noise_id,
                 }
             }
+
+            // Handle sine wave config
             SourceParam::Sine { volume, freq } => {
-                let sine = SinOsc::new().freq(200.0);
+                let sine = SinOsc::new().freq(*freq);
                 let sine_id = context.add_stereo_node(sine);
-                let sine_volume = context.add_stereo_node(Mul::new(1.0));
+                let sine_volume = context.add_stereo_node(Mul::new(*volume));
                 context.chain(vec![sine_id, sine_volume, context.destination]);
                 NodeIndexSet::Sine {
                     volume_index: sine_volume,
@@ -341,17 +333,7 @@ fn model(app: &App) -> Model {
     Model {
         egui,
         stream,
-        settings: Settings {
-            brownish_noise_knob_a: 0.07,
-            brownish_noise_volume: 0.65,
-            low_pass_freq: 10000.0,
-            param: SourceParam::Brownish {
-                knob_a: 0.0,
-                volume: 0.0,
-                low_pass_freq: 0.0,
-            },
-        },
-        new_settings: settings,
+        settings,
     }
 }
 /// Copies the audio data from the glicol buffer into the nannou audio buffer
@@ -375,16 +357,17 @@ fn raw_window_event(_app: &App, model: &mut Model, event: &nannou::winit::event:
     // Let egui handle things like keyboard and mouse input.
     model.egui.handle_raw_event(event);
 }
-fn view(app: &App, model: &Model, frame: Frame) {
-    let settings = &model.settings;
 
+fn view(app: &App, model: &Model, frame: Frame) {
     let draw = app.draw();
     draw.background().color(BLACK);
 
     draw.to_frame(app, &frame).unwrap();
     model.egui.draw_to_frame(&frame).unwrap();
 }
+
 fn handle_exit(app: &App, model: Model) {
     let settings = toml::to_string(&model.settings).unwrap();
-    dbg!(settings);
+    std::fs::write("useful-noise.toml", settings).unwrap();
+    // dbg!(settings);
 }
