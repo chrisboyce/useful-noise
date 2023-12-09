@@ -23,6 +23,10 @@ fn main() {
 
 #[derive(Clone, Debug)]
 enum NodeIndexSet {
+    Sine {
+        volume_index: NodeIndex,
+        freq_index: NodeIndex,
+    },
     Brownish {
         volume_index: NodeIndex,
         low_pass_index: NodeIndex,
@@ -32,6 +36,10 @@ enum NodeIndexSet {
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 enum SourceParam {
+    Sine {
+        volume: f32,
+        freq: f32,
+    },
     Brownish {
         knob_a: f32,
         volume: f32,
@@ -50,11 +58,17 @@ impl Default for NewSettings {
     fn default() -> Self {
         Self {
             glicol_indices: vec![],
-            ui_params: vec![SourceParam::Brownish {
-                knob_a: 0.1,
-                volume: 0.5,
-                low_pass_freq: 500.0,
-            }],
+            ui_params: vec![
+                SourceParam::Sine {
+                    volume: 0.1,
+                    freq: 100.0,
+                },
+                SourceParam::Brownish {
+                    knob_a: 0.1,
+                    volume: 0.5,
+                    low_pass_freq: 500.0,
+                },
+            ],
         }
     }
 }
@@ -157,57 +171,93 @@ fn update(_app: &App, model: &mut Model, update: Update) {
         .iter_mut()
         .zip(model.new_settings.glicol_indices.iter())
     {
-        if let (
-            SourceParam::Brownish {
-                knob_a,
-                volume,
-                low_pass_freq,
-            },
-            NodeIndexSet::Brownish {
-                volume_index,
-                low_pass_index,
-                knob_a_index,
-            },
-        ) = (ui_params, glicol_indices)
-        {
-            let volume_index = volume_index.clone();
-            let set_volume_message =
-                Message::SetParam(0, glicol_synth::GlicolPara::Number(*volume));
-            model
-                .stream
-                .send(move |audio: &mut Audio| {
-                    audio.context.send_msg(volume_index, set_volume_message)
-                })
-                .unwrap();
+        match (ui_params, glicol_indices) {
+            (
+                SourceParam::Brownish {
+                    knob_a,
+                    volume,
+                    low_pass_freq,
+                },
+                NodeIndexSet::Brownish {
+                    volume_index,
+                    low_pass_index,
+                    knob_a_index,
+                },
+            ) => {
+                let volume_index = volume_index.clone();
+                let set_volume_message =
+                    Message::SetParam(0, glicol_synth::GlicolPara::Number(*volume));
+                model
+                    .stream
+                    .send(move |audio: &mut Audio| {
+                        audio.context.send_msg(volume_index, set_volume_message)
+                    })
+                    .unwrap();
 
-            let low_pass_index = low_pass_index.clone();
-            let set_low_pass_message =
-                Message::SetParam(0, glicol_synth::GlicolPara::Number(*low_pass_freq));
-            model
-                .stream
-                .send(move |audio: &mut Audio| {
-                    audio.context.send_msg(low_pass_index, set_low_pass_message)
-                })
-                .unwrap();
+                let low_pass_index = low_pass_index.clone();
+                let set_low_pass_message =
+                    Message::SetParam(0, glicol_synth::GlicolPara::Number(*low_pass_freq));
+                model
+                    .stream
+                    .send(move |audio: &mut Audio| {
+                        audio.context.send_msg(low_pass_index, set_low_pass_message)
+                    })
+                    .unwrap();
 
-            let knob_a_index = knob_a_index.clone();
-            let set_knob_a_message =
-                Message::SetParam(0, glicol_synth::GlicolPara::Number(*knob_a));
-            model
-                .stream
-                .send(move |audio: &mut Audio| {
-                    audio.context.send_msg(knob_a_index, set_knob_a_message)
-                })
-                .unwrap();
+                let knob_a_index = knob_a_index.clone();
+                let set_knob_a_message =
+                    Message::SetParam(0, glicol_synth::GlicolPara::Number(*knob_a));
+                model
+                    .stream
+                    .send(move |audio: &mut Audio| {
+                        audio.context.send_msg(knob_a_index, set_knob_a_message)
+                    })
+                    .unwrap();
 
-            egui::Window::new("Brownish Noise").show(&ctx, |ui| {
-                ui.label("Volume");
-                ui.add(egui::Slider::new(volume, 0.0..=1.0));
-                ui.label("Low Pass Frequency");
-                ui.add(egui::Slider::new(low_pass_freq, 0.0..=1.0));
-                ui.label("Knob A");
-                ui.add(egui::Slider::new(knob_a, 0.0..=1.0));
-            });
+                egui::Window::new("Brownish Noise").show(&ctx, |ui| {
+                    ui.label("Volume");
+                    ui.add(egui::Slider::new(volume, 0.0..=1.0));
+                    ui.label("Low Pass Frequency");
+                    ui.add(egui::Slider::new(low_pass_freq, 0.0..=1.0));
+                    ui.label("Knob A");
+                    ui.add(egui::Slider::new(knob_a, 0.0..=1.0));
+                });
+            }
+            (
+                SourceParam::Sine { volume, freq },
+                NodeIndexSet::Sine {
+                    volume_index,
+                    freq_index,
+                },
+            ) => {
+                let volume_index = volume_index.clone();
+                let set_volume_message =
+                    Message::SetParam(0, glicol_synth::GlicolPara::Number(*volume));
+                model
+                    .stream
+                    .send(move |audio: &mut Audio| {
+                        audio.context.send_msg(volume_index, set_volume_message)
+                    })
+                    .unwrap();
+
+                let freq_index = freq_index.clone();
+                let set_freq_message =
+                    Message::SetParam(0, glicol_synth::GlicolPara::Number(*freq));
+                model
+                    .stream
+                    .send(move |audio: &mut Audio| {
+                        audio.context.send_msg(freq_index, set_freq_message)
+                    })
+                    .unwrap();
+
+                egui::Window::new("Sine Wave").show(&ctx, |ui| {
+                    ui.label("Volume");
+                    ui.add(egui::Slider::new(volume, 0.0..=1.0));
+                    ui.label("Frequency");
+                    ui.add(egui::Slider::new(volume, 40.0..=10000.0));
+                });
+            }
+            (_, _) => todo!(),
         }
     }
 }
@@ -261,6 +311,16 @@ fn model(app: &App) -> Model {
                     volume_index: noise_volume,
                     low_pass_index: noise_low_pass,
                     knob_a_index: noise_id,
+                }
+            }
+            SourceParam::Sine { volume, freq } => {
+                let sine = SinOsc::new().freq(200.0);
+                let sine_id = context.add_stereo_node(sine);
+                let sine_volume = context.add_stereo_node(Mul::new(1.0));
+                context.chain(vec![sine_id, sine_volume, context.destination]);
+                NodeIndexSet::Sine {
+                    volume_index: sine_volume,
+                    freq_index: sine_id,
                 }
             }
         };
