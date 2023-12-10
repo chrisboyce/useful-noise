@@ -179,6 +179,19 @@ fn model(app: &App) -> state::Model {
     let c = context.add_mono_node(ConstSig::new(220.0));
     let i = context.add_mono_node(Impulse::new().freq(1.0).sr(SAMPLE_RATE));
 
+    // Connect the Impulse to the percussion envelope
+    // -> envb
+    context.chain(vec![i, env_perc]);
+
+    // -> env_pitch
+    context.chain(vec![i, ep2]);
+
+    // -> pitch
+    context.chain(vec![ep2, p_m, p_a]);
+
+    context.chain(vec![env_perc, m2]);
+    context.chain(vec![ep2, s, m2, m3, context.destination]);
+
     // // triggerb
     // context.chain(vec![trigger_speed, trigger_seq]);
 
@@ -196,9 +209,10 @@ fn model(app: &App) -> state::Model {
     // out
     // context.chain(vec![p_a, s, m2, m3, context.destination]);
     // context.chain(vec![trigger_seq, m2]);
-    context.chain(vec![i, env_perc, m2]);
     // context.chain(vec![trigger_speed, trigger_seq, m2]);
-    context.chain(vec![s, m2, context.destination]);
+
+    // context.chain(vec![i, env_perc, m2]);
+    // context.chain(vec![s, m2, context.destination]);
 
     // let a = context.add_mono_node(SinOsc::new().freq(440.));
     // let b = context.add_mono_node(Mul::new(1.0));
