@@ -1,18 +1,26 @@
 use glicol_synth::{
-    filter::{ResonantHighPassFilter, ResonantLowPassFilter},
-    operator::Mul,
+    envelope::EnvPerc,
+    filter::ResonantLowPassFilter,
+    operator::{Add, Mul},
     oscillator::SinOsc,
-    AudioContext as GlicolAudioContext, AudioContextBuilder, Message,
+    sequencer::{Sequencer, Speed},
+    signal::{ConstSig, Impulse},
+    AudioContext as GlicolAudioContext, AudioContextBuilder, GlicolPara, Message,
 };
 use nannou::prelude::*;
 use nannou_audio::{self as audio, Buffer};
-use nannou_egui::{self, egui, Egui};
+use nannou_egui::{
+    self,
+    egui::{self, style::Spacing},
+    Egui,
+};
 use sound::brownish_noise::BrownishNoise;
 
 mod sound;
 mod state;
 
 const SAMPLE_RATE: usize = 44_1000;
+const BPM: usize = 128;
 const FRAME_SIZE: usize = 64;
 
 type AudioContext = GlicolAudioContext<FRAME_SIZE>;
@@ -147,8 +155,64 @@ fn model(app: &App) -> state::Model {
     let mut settings = get_settings();
     let mut glicol_indices = vec![];
 
+    //     out: sin ~pitch >> mul ~envb >> mul 0.9
+    // ~envb: ~triggerb >> envperc 0.01 0.4;
+    // ~env_pitch: ~triggerb >> envperc 0.01 0.1;
+    // ~pitch: ~env_pitch >> mul 50 >> add 60;
+    // ~triggerb: speed 4.0 >> seq 60
+    let trigger_speed = context.add_mono_node(Speed::new(4.0));
+    let trigger_seq = context.add_mono_node(
+        Sequencer::new(vec![
+            (60.0, GlicolPara::Number(2.0)),
+            (20.0, GlicolPara::Number(1.0)),
+        ])
+        .sr(SAMPLE_RATE)
+        .bpm(BPM as f32),
+    );
+    let env_perc = context.add_mono_node(EnvPerc::new().sr(SAMPLE_RATE).attack(0.01).decay(0.4));
+    let ep2 = context.add_mono_node(EnvPerc::new().attack(0.01).decay(0.1).sr(SAMPLE_RATE));
+    let p_m = context.add_mono_node(Mul::new(50.0));
+    let p_a = context.add_mono_node(Add::new(60.0));
+    let s = context.add_mono_node(SinOsc::new().freq(440.0));
+    let m2 = context.add_mono_node(Mul::new(1.0));
+    let m3 = context.add_mono_node(Mul::new(0.9));
+    let c = context.add_mono_node(ConstSig::new(220.0));
+    let i = context.add_mono_node(Impulse::new().freq(1.0).sr(SAMPLE_RATE));
+
+    // // triggerb
+    // context.chain(vec![trigger_speed, trigger_seq]);
+
+    // // envb
+    // context.chain(vec![trigger_seq, env_perc]);
+
+    // // env_pitch
+    // context.chain(vec![trigger_seq, ep2]);
+
+    // // pitch
+    // context.chain(vec![ep2, p_m, p_a]);
+
+    // context.chain(vec![env_perc, m2]);
+
+    // out
+    // context.chain(vec![p_a, s, m2, m3, context.destination]);
+    // context.chain(vec![trigger_seq, m2]);
+    context.chain(vec![i, env_perc, m2]);
+    // context.chain(vec![trigger_speed, trigger_seq, m2]);
+    context.chain(vec![s, m2, context.destination]);
+
+    // let a = context.add_mono_node(SinOsc::new().freq(440.));
+    // let b = context.add_mono_node(Mul::new(1.0));
+    // let c = context.add_mono_node(SinOsc::new().freq(1.2));
+    // let d = context.add_mono_node(Mul::new(0.3));
+    // let e = context.add_mono_node(Add::new(0.5));
+    // context.chain(vec![a, b]);
+    // context.chain(vec![c, d, e]);
+    // context.chain(vec![e, b]);
+    // context.chain(vec![b, context.destination]);
+
     // Each of our settings will need to have glicol nodes created
     for ui_param in &settings.ui_params {
+        continue;
         // We use this "match" statement to create the node configuration
         // based on which type of `SourceParam` we're setting up
         let node_index_set = match ui_param {
@@ -165,8 +229,18 @@ fn model(app: &App) -> state::Model {
                 // These are then "chained" in a sequence, effectively passing
                 // our noise signal through a series of filters.
                 let knob_a_index = context.add_mono_node(BrownishNoise::new_with_scale(*knob_a));
-                let low_pass_index =
-                    context.add_mono_node(ResonantLowPassFilter::new().cutoff(*low_pass_freq));
+
+                let low_pass_index = context.add_mono_node(
+                    ResonantLowPassFilter::new()
+                        .cutoff(*low_pass_freq)
+                        .pattern(vec![
+                            (1.0, 1.0),
+                            (10.0, 10.0),
+                            (100.0, 100.0),
+                            (10.0, 10.0),
+                            (1.0, 1.0),
+                        ]),
+                );
                 let volume_index = context.add_mono_node(Mul::new(*volume));
 
                 context.chain(vec![
@@ -188,8 +262,11 @@ fn model(app: &App) -> state::Model {
 
             // Handle sine wave config
             sound::SoundParam::Sine { volume, freq } => {
-                let sine = SinOsc::new().freq(*freq);
-                let sine_id = context.add_mono_node(sine);
+                // ~mod: sin 1.2 >> mul 0.3 >> add 0.5
+                // let module = context.add_mono_node(SinOsc::new().freq(1.0));
+                // let f = context.add_mono_node(Mul::new(0.3));
+
+                let sine_id = context.add_mono_node(SinOsc::new().freq(440.0));
                 let sine_volume = context.add_mono_node(Mul::new(*volume));
                 context.chain(vec![sine_id, sine_volume, context.destination]);
                 sound::NodeIndexSet::Sine {
