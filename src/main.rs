@@ -200,9 +200,9 @@ fn update(_app: &App, model: &mut state::Model, update: Update) {
                     ui.add(egui::Slider::new(volume, 0.0..=1.0));
                     ui.label("BPM");
                     ui.add(egui::Slider::new(bpm, 10.0..=200.0));
-                    ui.label("Amplitude Attack");
+                    ui.label("Volume Attack");
                     ui.add(egui::Slider::new(volume_attack, 0.0..=1.0));
-                    ui.label("Amplitude Decay");
+                    ui.label("Volume Decay");
                     ui.add(egui::Slider::new(volume_decay, 0.0..=1.0));
                     ui.label("Pitch Attack");
                     ui.add(egui::Slider::new(pitch_attack, 0.0..=1.0));
