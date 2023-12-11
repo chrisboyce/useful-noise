@@ -14,7 +14,8 @@ use nannou_egui::{
     egui::{self, style::Spacing},
     Egui,
 };
-use sound::brownish_noise::BrownishNoise;
+use petgraph::adj::NodeIndices;
+use sound::{brownish_noise::BrownishNoise, NodeIndexSet, SoundParam};
 
 mod sound;
 mod state;
@@ -123,6 +124,29 @@ fn update(_app: &App, model: &mut state::Model, update: Update) {
                     ui.add(egui::Slider::new(freq, 40.0..=440.0));
                 });
             }
+            (
+                SoundParam::Kick {
+                    volume,
+                    bpm,
+                    amplitude_attack: attack1,
+                    amplitude_decay: decay1,
+                    pitch_attack: attack2,
+                    pitch_decay: decay2,
+                },
+                NodeIndexSet::Kick {
+                    am_env_index,
+                    fm_env_index,
+                    impulse_index,
+                    volume_index,
+                },
+            ) => {
+                egui::Window::new("Kick").show(&ctx, |ui| {
+                    ui.label("Volume");
+                    // ui.add(egui::Slider::new(volume, 0.0..=1.0));
+                    // ui.label("Frequency");
+                    // ui.add(egui::Slider::new(freq, 40.0..=440.0));
+                });
+            }
             (_, _) => todo!(),
         }
     }
@@ -160,15 +184,16 @@ fn model(app: &App) -> state::Model {
     // ~env_pitch: ~triggerb >> envperc 0.01 0.1;
     // ~pitch: ~env_pitch >> mul 50 >> add 60;
     // ~triggerb: speed 4.0 >> seq 60
-    let trigger_speed = context.add_mono_node(Speed::new(4.0));
-    let trigger_seq = context.add_mono_node(
-        Sequencer::new(vec![
-            (60.0, GlicolPara::Number(2.0)),
-            (20.0, GlicolPara::Number(1.0)),
-        ])
-        .sr(SAMPLE_RATE)
-        .bpm(BPM as f32),
-    );
+    // let trigger_speed = context.add_mono_node(Speed::new(4.0));
+    // let trigger_seq = context.add_mono_node(
+    //     Sequencer::new(vec![
+    //         (60.0, GlicolPara::Number(2.0)),
+    //         (20.0, GlicolPara::Number(1.0)),
+    //     ])
+    //     .sr(SAMPLE_RATE)
+    //     .bpm(BPM as f32),
+    // );
+
     let env_perc = context.add_mono_node(EnvPerc::new().sr(SAMPLE_RATE).attack(0.01).decay(0.4));
     let ep2 = context.add_mono_node(EnvPerc::new().attack(0.01).decay(0.1).sr(SAMPLE_RATE));
     let p_m = context.add_mono_node(Mul::new(50.0));
@@ -176,21 +201,21 @@ fn model(app: &App) -> state::Model {
     let s = context.add_mono_node(SinOsc::new().freq(440.0));
     let m2 = context.add_mono_node(Mul::new(1.0));
     let m3 = context.add_mono_node(Mul::new(0.9));
-    let c = context.add_mono_node(ConstSig::new(220.0));
+    // let c = context.add_mono_node(ConstSig::new(220.0));
     let i = context.add_mono_node(Impulse::new().freq(1.0).sr(SAMPLE_RATE));
 
-    // Connect the Impulse to the percussion envelope
-    // -> envb
-    context.chain(vec![i, env_perc]);
+    // // Connect the Impulse to the percussion envelope
+    // // -> envb
+    // context.chain(vec![i, env_perc]);
 
-    // -> env_pitch
-    context.chain(vec![i, ep2]);
+    // // -> env_pitch
+    // context.chain(vec![i, ep2]);
 
-    // -> pitch
-    context.chain(vec![ep2, p_m, p_a]);
+    // // -> pitch
+    // context.chain(vec![ep2, p_m, p_a]);
 
-    context.chain(vec![env_perc, m2]);
-    context.chain(vec![ep2, s, m2, m3, context.destination]);
+    // context.chain(vec![env_perc, m2]);
+    // context.chain(vec![ep2, s, m2, m3, context.destination]);
 
     // // triggerb
     // context.chain(vec![trigger_speed, trigger_seq]);
@@ -226,7 +251,6 @@ fn model(app: &App) -> state::Model {
 
     // Each of our settings will need to have glicol nodes created
     for ui_param in &settings.ui_params {
-        continue;
         // We use this "match" statement to create the node configuration
         // based on which type of `SourceParam` we're setting up
         let node_index_set = match ui_param {
@@ -286,6 +310,53 @@ fn model(app: &App) -> state::Model {
                 sound::NodeIndexSet::Sine {
                     volume_index: sine_volume,
                     freq_index: sine_id,
+                }
+            }
+            sound::SoundParam::Kick {
+                volume,
+                bpm,
+                amplitude_attack,
+                amplitude_decay,
+                pitch_attack,
+                pitch_decay,
+            } => {
+                let volume_envelope = context.add_mono_node(
+                    EnvPerc::new()
+                        .sr(SAMPLE_RATE)
+                        .attack(*amplitude_attack)
+                        .decay(*amplitude_decay),
+                );
+
+                let pitch_envelope = context.add_mono_node(
+                    EnvPerc::new()
+                        .sr(SAMPLE_RATE)
+                        .attack(*pitch_attack)
+                        .decay(*pitch_decay),
+                );
+
+                let beat = context.add_mono_node(Impulse::new().freq(*bpm / 60.0).sr(SAMPLE_RATE));
+
+                let kick_pitch = context.add_mono_node(Mul::new(500.0));
+                let kick_pitch_baseline = context.add_mono_node(Add::new(400.0));
+                let kick_synth = context.add_mono_node(SinOsc::new().sr(SAMPLE_RATE));
+
+                let volume = context.add_mono_node(Mul::new(0.0));
+                context.chain(vec![beat, volume_envelope, volume]);
+
+                context.chain(vec![
+                    beat,
+                    pitch_envelope,
+                    kick_pitch,
+                    kick_pitch_baseline,
+                    kick_synth,
+                    context.destination,
+                ]);
+
+                NodeIndexSet::Kick {
+                    am_env_index: volume_envelope,
+                    fm_env_index: pitch_envelope,
+                    impulse_index: beat,
+                    volume_index: volume,
                 }
             }
         };
