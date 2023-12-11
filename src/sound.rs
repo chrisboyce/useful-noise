@@ -35,9 +35,9 @@ pub mod debug {
 #[derive(Clone, Debug)]
 pub enum NodeIndexSet {
     Kick {
-        am_env_index: NodeIndex,
-        fm_env_index: NodeIndex,
-        impulse_index: NodeIndex,
+        volume_envelope_index: NodeIndex,
+        pitch_envelope_index: NodeIndex,
+        beat_index: NodeIndex,
         volume_index: NodeIndex,
     },
     Sine {
@@ -57,8 +57,8 @@ pub enum SoundParam {
     Kick {
         volume: f32,
         bpm: f32,
-        amplitude_attack: f32,
-        amplitude_decay: f32,
+        volume_attack: f32,
+        volume_decay: f32,
         pitch_attack: f32,
         pitch_decay: f32,
     },

@@ -10,22 +10,22 @@ impl Default for Settings {
             glicol_indices: vec![],
             ui_params: vec![
                 SoundParam::Kick {
-                    volume: 0.5,
-                    bpm: 128.0,
-                    amplitude_attack: 0.01,
-                    amplitude_decay: 0.4,
-                    pitch_attack: 0.01,
-                    pitch_decay: 0.1,
+                    volume: 0.9800000190734863,
+                    bpm: 50.0,
+                    volume_attack: 0.0020000000949949026,
+                    volume_decay: 0.010999999940395355,
+                    pitch_attack: 0.009999999776482582,
+                    pitch_decay: 0.10000000149011612,
                 },
-                // SoundParam::Sine {
-                //     volume: 0.5,
-                //     freq: 200.0,
-                // },
-                // SoundParam::Brownish {
-                //     knob_a: 0.1,
-                //     volume: 0.5,
-                //     low_pass_freq: 500.0,
-                // },
+                SoundParam::Sine {
+                    volume: 0.5,
+                    freq: 200.0,
+                },
+                SoundParam::Brownish {
+                    knob_a: 0.1,
+                    volume: 0.5,
+                    low_pass_freq: 500.0,
+                },
             ],
         }
     }

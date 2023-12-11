@@ -15,7 +15,7 @@ use nannou_egui::{
     Egui,
 };
 use petgraph::adj::NodeIndices;
-use sound::{brownish_noise::BrownishNoise, NodeIndexSet, SoundParam};
+use sound::{brownish_noise::BrownishNoise, debug::DebugNode, NodeIndexSet, SoundParam};
 
 mod sound;
 mod state;
@@ -128,22 +128,87 @@ fn update(_app: &App, model: &mut state::Model, update: Update) {
                 SoundParam::Kick {
                     volume,
                     bpm,
-                    amplitude_attack: attack1,
-                    amplitude_decay: decay1,
-                    pitch_attack: attack2,
-                    pitch_decay: decay2,
+                    volume_attack,
+                    volume_decay,
+                    pitch_attack,
+                    pitch_decay,
                 },
                 NodeIndexSet::Kick {
-                    am_env_index,
-                    fm_env_index,
-                    impulse_index,
+                    volume_envelope_index,
+                    pitch_envelope_index,
+                    beat_index,
                     volume_index,
                 },
             ) => {
+                let volume_index = volume_index.clone();
+                let set_volume_message = Message::SetToNumber(0, *volume);
+                model
+                    .stream
+                    .send(move |audio: &mut sound::Audio| {
+                        audio.context.send_msg(volume_index, set_volume_message)
+                    })
+                    .unwrap();
+                // let bpm_index = beat_index.clone();
+                // let set_bpm_message = Message::SetToNumber(0, *bpm / 60.0);
+                // model
+                //     .stream
+                //     .send(move |audio: &mut sound::Audio| {
+                //         audio.context.send_msg(bpm_index, set_bpm_message)
+                //     })
+                //     .unwrap();
+                let am_env_index = volume_envelope_index.clone();
+                let set_amplitude_attack_message = Message::SetToNumber(0, *volume_attack);
+                model
+                    .stream
+                    .send(move |audio: &mut sound::Audio| {
+                        audio
+                            .context
+                            .send_msg(am_env_index, set_amplitude_attack_message)
+                    })
+                    .unwrap();
+                let set_amplitude_decay_message = Message::SetToNumber(1, *volume_decay);
+                model
+                    .stream
+                    .send(move |audio: &mut sound::Audio| {
+                        audio
+                            .context
+                            .send_msg(am_env_index, set_amplitude_decay_message)
+                    })
+                    .unwrap();
+                let fm_env_index = pitch_envelope_index.clone();
+                let set_pitch_attack_message = Message::SetToNumber(0, *pitch_attack);
+                model
+                    .stream
+                    .send(move |audio: &mut sound::Audio| {
+                        audio
+                            .context
+                            .send_msg(fm_env_index, set_pitch_attack_message)
+                    })
+                    .unwrap();
+                let set_pitch_decay_message = Message::SetToNumber(1, *pitch_decay);
+                model
+                    .stream
+                    .send(move |audio: &mut sound::Audio| {
+                        audio
+                            .context
+                            .send_msg(fm_env_index, set_pitch_decay_message)
+                    })
+                    .unwrap();
+
                 egui::Window::new("Kick").show(&ctx, |ui| {
                     ui.label("Volume");
-                    // ui.add(egui::Slider::new(volume, 0.0..=1.0));
-                    // ui.label("Frequency");
+                    ui.add(egui::Slider::new(volume, 0.0..=1.0));
+                    ui.label("BPM");
+                    ui.add(egui::Slider::new(bpm, 10.0..=200.0));
+                    ui.label("Amplitude Attack");
+                    ui.add(egui::Slider::new(volume_attack, 0.0..=1.0));
+                    ui.label("Amplitude Decay");
+                    ui.add(egui::Slider::new(volume_decay, 0.0..=1.0));
+                    ui.label("Pitch Attack");
+                    ui.add(egui::Slider::new(pitch_attack, 0.0..=1.0));
+                    ui.label("Pitch Decay");
+                    ui.add(egui::Slider::new(pitch_decay, 0.0..=1.0));
+
                     // ui.add(egui::Slider::new(freq, 40.0..=440.0));
                 });
             }
@@ -268,17 +333,8 @@ fn model(app: &App) -> state::Model {
                 // our noise signal through a series of filters.
                 let knob_a_index = context.add_mono_node(BrownishNoise::new_with_scale(*knob_a));
 
-                let low_pass_index = context.add_mono_node(
-                    ResonantLowPassFilter::new()
-                        .cutoff(*low_pass_freq)
-                        .pattern(vec![
-                            (1.0, 1.0),
-                            (10.0, 10.0),
-                            (100.0, 100.0),
-                            (10.0, 10.0),
-                            (1.0, 1.0),
-                        ]),
-                );
+                let low_pass_index =
+                    context.add_mono_node(ResonantLowPassFilter::new().cutoff(*low_pass_freq));
                 let volume_index = context.add_mono_node(Mul::new(*volume));
 
                 context.chain(vec![
@@ -315,48 +371,53 @@ fn model(app: &App) -> state::Model {
             sound::SoundParam::Kick {
                 volume,
                 bpm,
-                amplitude_attack,
-                amplitude_decay,
+                volume_attack: amplitude_attack,
+                volume_decay: amplitude_decay,
                 pitch_attack,
                 pitch_decay,
             } => {
-                let volume_envelope = context.add_mono_node(
+                let volume_envelope_index = context.add_mono_node(
                     EnvPerc::new()
                         .sr(SAMPLE_RATE)
                         .attack(*amplitude_attack)
                         .decay(*amplitude_decay),
                 );
 
-                let pitch_envelope = context.add_mono_node(
+                let pitch_envelope_index = context.add_mono_node(
                     EnvPerc::new()
                         .sr(SAMPLE_RATE)
                         .attack(*pitch_attack)
                         .decay(*pitch_decay),
                 );
 
-                let beat = context.add_mono_node(Impulse::new().freq(*bpm / 60.0).sr(SAMPLE_RATE));
+                let beat_index =
+                    context.add_mono_node(Impulse::new().freq(*bpm / 60.0).sr(SAMPLE_RATE));
 
                 let kick_pitch = context.add_mono_node(Mul::new(500.0));
                 let kick_pitch_baseline = context.add_mono_node(Add::new(400.0));
                 let kick_synth = context.add_mono_node(SinOsc::new().sr(SAMPLE_RATE));
 
-                let volume = context.add_mono_node(Mul::new(0.0));
-                context.chain(vec![beat, volume_envelope, volume]);
+                let pre_master = context.add_mono_node(Mul::new(1.0));
+                let volume_index = context.add_mono_node(Mul::new(1.0));
+
+                context.chain(vec![beat_index, volume_envelope_index, pre_master]);
 
                 context.chain(vec![
-                    beat,
-                    pitch_envelope,
+                    beat_index,
+                    pitch_envelope_index,
                     kick_pitch,
                     kick_pitch_baseline,
                     kick_synth,
+                    pre_master,
+                    volume_index,
                     context.destination,
                 ]);
 
                 NodeIndexSet::Kick {
-                    am_env_index: volume_envelope,
-                    fm_env_index: pitch_envelope,
-                    impulse_index: beat,
-                    volume_index: volume,
+                    volume_envelope_index,
+                    pitch_envelope_index,
+                    beat_index,
+                    volume_index,
                 }
             }
         };
