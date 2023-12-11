@@ -23,6 +23,7 @@ mod state;
 const SAMPLE_RATE: usize = 44_1000;
 const BPM: usize = 128;
 const FRAME_SIZE: usize = 64;
+const CONFIG_VERSION: usize = 1;
 
 type AudioContext = GlicolAudioContext<FRAME_SIZE>;
 
@@ -448,7 +449,11 @@ fn get_settings() -> state::Settings {
     if let Ok(toml) = std::fs::read_to_string("useful-noise.toml") {
         let settings = toml::from_str::<state::Settings>(&toml);
         if let Ok(settings) = settings {
-            settings
+            if settings.config_version < CONFIG_VERSION {
+                state::Settings::default()
+            } else {
+                settings
+            }
         } else {
             state::Settings::default()
         }

@@ -7,6 +7,7 @@ use crate::sound::{Audio, SoundParam};
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            config_version: 1,
             glicol_indices: vec![],
             ui_params: vec![
                 SoundParam::Kick {
@@ -41,5 +42,6 @@ pub struct Model {
 pub struct Settings {
     #[serde(skip)]
     pub glicol_indices: Vec<crate::sound::NodeIndexSet>,
+    pub config_version: usize,
     pub ui_params: Vec<crate::sound::SoundParam>,
 }
