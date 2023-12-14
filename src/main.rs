@@ -42,22 +42,7 @@ fn update(_app: &App, model: &mut state::Model, update: Update) {
                 volume: 1.0,
                 freq: 440.0,
             });
-            // add new Sine wave
         }
-        // ui.label("Volume");
-        // ui.add(egui::Slider::new(volume, 0.0..=1.0));
-        // ui.label("BPM");
-        // ui.add(egui::Slider::new(bpm, 10.0..=200.0));
-        // ui.label("Volume Attack");
-        // ui.add(egui::Slider::new(volume_attack, 0.0..=1.0));
-        // ui.label("Volume Decay");
-        // ui.add(egui::Slider::new(volume_decay, 0.0..=1.0));
-        // ui.label("Pitch Attack");
-        // ui.add(egui::Slider::new(pitch_attack, 0.0..=1.0));
-        // ui.label("Pitch Decay");
-        // ui.add(egui::Slider::new(pitch_decay, 0.0..=1.0));
-
-        // ui.add(egui::Slider::new(freq, 40.0..=440.0));
     });
 
     for (index, (ui_params, glicol_indices)) in model
@@ -80,7 +65,7 @@ fn update(_app: &App, model: &mut state::Model, update: Update) {
                     knob_a_index,
                 },
             ) => {
-                egui::Window::new("Brownish Noise {index}").show(&ctx, |ui| {
+                egui::Window::new(format!("Brownish Noise {index}")).show(&ctx, |ui| {
                     ui.label("Volume");
                     let volume_ui_element = ui.add(egui::Slider::new(volume, 0.0..=1.0));
                     if volume_ui_element.changed() {
@@ -180,7 +165,7 @@ fn update(_app: &App, model: &mut state::Model, update: Update) {
                     })
                     .unwrap();
 
-                egui::Window::new("Kick {index}").show(&ctx, |ui| {
+                egui::Window::new(format!("Kick {index}")).show(&ctx, |ui| {
                     ui.label("Volume");
                     ui.add(egui::Slider::new(volume, 0.0..=1.0));
 
@@ -266,7 +251,7 @@ fn model(app: &App) -> state::Model {
     let window_id = app
         .new_window()
         .title("Useful Noise 🔊")
-        .size(400, 400)
+        .size(600, 600)
         .key_pressed(key_pressed)
         .view(view)
         .raw_event(raw_window_event)
